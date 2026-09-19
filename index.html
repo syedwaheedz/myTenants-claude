@@ -240,11 +240,66 @@
   .month-summary b{color:var(--ink);}
   .snapshot-canvas-wrap{background:var(--md-surface-variant);border-radius:12px;padding:10px;margin-bottom:14px;display:flex;justify-content:center;}
   .snapshot-canvas-wrap canvas{width:100%;max-width:340px;height:auto;border-radius:8px;box-shadow:var(--shadow-2);}
+
+  /* ---- Monthly report (print / PDF export) ----
+     Hidden in the normal app UI; only shown to the browser's print engine.
+     Every rule is scoped under #report-print-root so it can never bleed
+     into the live app's own .card / .section-title / table styling. */
+  #report-print-root{ display:none; }
+  @media print{
+    html, body{ background:#fff !important; }
+    body *{ visibility:hidden; }
+    #report-print-root, #report-print-root *{ visibility:visible; }
+    #report-print-root{ display:block; position:absolute; top:0; left:0; width:100%; background:#fff; }
+    @page{ size:A4; margin:16mm 16mm 20mm 16mm; }
+  }
+  #report-print-root{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:#191C1B; font-size:10.5pt; line-height:1.4;
+  }
+  #report-print-root .r-page{ page-break-after:always; min-height:261mm; display:flex; flex-direction:column; }
+  #report-print-root .r-page:last-child{ page-break-after:auto; }
+  #report-print-root .r-header{ display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #2F6B5E; padding-bottom:8px; margin-bottom:16px; }
+  #report-print-root .r-brand{ display:flex; align-items:center; gap:8px; }
+  #report-print-root .r-logo{ width:26px; height:26px; border-radius:7px; }
+  #report-print-root .r-brand-name{ font-weight:700; font-size:13pt; color:#191C1B; }
+  #report-print-root .r-doc-title{ text-align:right; }
+  #report-print-root .r-doc-title .t1{ font-weight:700; font-size:11pt; }
+  #report-print-root .r-doc-title .t2{ font-size:9pt; color:#6B6A64; }
+  #report-print-root .r-footer{ margin-top:auto; padding-top:8mm; }
+  #report-print-root .r-footer .inner{ width:100%; border-top:1px solid #E3E1DB; padding-top:6px; display:flex; justify-content:space-between; font-size:8pt; color:#9a9a95; }
+  #report-print-root h1.r-cover-title{ font-size:22pt; margin:10mm 0 2px 0; }
+  #report-print-root .r-cover-sub{ color:#6B6A64; font-size:11pt; margin-bottom:10mm; }
+  #report-print-root .r-section-title{ font-size:12pt; font-weight:700; color:#2F6B5E; margin:14px 0 8px 0; padding-bottom:4px; border-bottom:1px solid #DCE8E2; }
+  #report-print-root .r-stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6mm; }
+  #report-print-root .r-stat-box{ background:#F6F8F6; border:1px solid #E3E1DB; border-radius:8px; padding:10px 12px; }
+  #report-print-root .r-stat-box .r-label{ font-size:8.5pt; color:#6B6A64; margin-bottom:3px; }
+  #report-print-root .r-stat-box .r-value{ font-size:15pt; font-weight:700; }
+  #report-print-root .r-stat-box .r-caption{ font-size:7.8pt; color:#8a8d85; margin-top:3px; }
+  #report-print-root table{ width:100%; border-collapse:collapse; margin-bottom:6mm; font-size:9.5pt; }
+  #report-print-root th{ text-align:left; background:#EAF2EF; color:#1E4A40; font-weight:700; padding:6px 8px; font-size:8.8pt; text-transform:uppercase; letter-spacing:.02em; }
+  #report-print-root td{ padding:6px 8px; border-bottom:1px solid #EDEDE8; }
+  #report-print-root tr:nth-child(even) td{ background:#FAFAF8; }
+  #report-print-root td.r-num, #report-print-root th.r-num{ text-align:right; font-variant-numeric:tabular-nums; }
+  #report-print-root .r-pill{ display:inline-block; padding:1.5px 7px; border-radius:10px; font-size:8pt; font-weight:700; }
+  #report-print-root .r-pill.paid{ background:#DFF3E4; color:#1E6E3C; }
+  #report-print-root .r-pill.partial{ background:#F6E1AC; color:#6F5D1E; }
+  #report-print-root .r-pill.due{ background:#FBEAE6; color:#BA1A1A; }
+  #report-print-root .r-row-total td{ font-weight:700; border-top:2px solid #DCE8E2; border-bottom:none; background:#fff; }
+  #report-print-root .r-two-col{ display:flex; gap:8mm; }
+  #report-print-root .r-two-col > div{ flex:1; }
+  #report-print-root .r-chart-box{ border:1px solid #E3E1DB; border-radius:8px; padding:10px 12px; margin-bottom:6mm; }
+  #report-print-root .r-chart-box .r-ct{ font-size:9.5pt; font-weight:700; margin-bottom:2px; }
+  #report-print-root .r-chart-box .r-cs{ font-size:8.3pt; color:#6B6A64; margin-bottom:8px; }
+  #report-print-root .r-note{ font-size:8.5pt; color:#6B6A64; font-style:italic; margin-top:-3mm; margin-bottom:5mm; }
+  #report-print-root .r-callout{ background:#FBF1DD; border:1px solid #F0DCA8; border-radius:8px; padding:8px 10px; font-size:9pt; margin-bottom:5mm; }
+  #report-print-root .r-empty{ color:#8a8d85; font-size:9pt; font-style:italic; margin-bottom:5mm; }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast" class="toast"></div>
+<div id="report-print-root"></div>
 
 <script>
 /* =========================================================================
@@ -981,10 +1036,12 @@ const Repo = {
     const [properties, tenants] = await Promise.all([this.allProperties(), getAll("tenants")]);
     return { properties: properties.length, tenants: tenants.length };
   },
-  // Monthly collections trend for the dashboard bar chart.
-  async monthlyCollections(n=6){
-    const now = monthKey();
-    const months = []; for (let i=n-1;i>=0;i--) months.push(addMonths(now,-i));
+  // Monthly collections trend for the dashboard bar chart / report. endMonth
+  // defaults to the real current month (dashboard use); the report passes the
+  // period being reported on, so a past month's trend doesn't shift to "today".
+  async monthlyCollections(n=6, endMonth){
+    const end = endMonth || monthKey();
+    const months = []; for (let i=n-1;i>=0;i--) months.push(addMonths(end,-i));
     const txns = await getAll("transactions");
     return months.map(mk => ({
       label: fmtMonthShort(mk),
@@ -997,6 +1054,39 @@ const Repo = {
     const byProp = {}; for (const p of properties) byProp[p.id] = {label:p.name, value:0};
     for (const t of tenants){ if ((t.current_balance||0)>0 && byProp[t.property_id]) byProp[t.property_id].value += t.current_balance; }
     return Object.values(byProp).filter(x=>x.value>0.009).sort((a,b)=>b.value-a.value);
+  },
+  // Defaulters as of a specific month's end (historical, for a past month's
+  // report) rather than today's rolling balance — same idea as arrearsAsOf,
+  // but returning the per-tenant rows instead of just the total.
+  async defaultersAsOf(mk){
+    const [tenants, properties] = await Promise.all([getAll("tenants"), this.allProperties()]);
+    const pById = Object.fromEntries(properties.map(p=>[p.id,p]));
+    const rows = [];
+    for (const t of tenants){
+      const bal = await this.tenantBalanceAsOf(t.id, mk);
+      if (bal > 0.004) rows.push({...t, current_balance: bal, property: pById[t.property_id]});
+    }
+    return rows.sort((a,b)=>b.current_balance-a.current_balance);
+  },
+  // Partner settlement figures for a report. If a settlement was already
+  // recorded for this exact period, use those stored historical numbers —
+  // computeSettlement() only looks at *unsettled* cash, so re-running it for
+  // an already-settled month would wrongly show everything as zero. Only
+  // fall back to a live computeSettlement() when nothing's been recorded yet
+  // (e.g. reporting on the current, still-open month).
+  async reportPartnerSettlementSummary(mk){
+    const [historyAll, partners] = await Promise.all([this.settlementHistory(), this.allPartners()]);
+    const partnerById = Object.fromEntries(partners.map(p=>[p.id,p]));
+    const recorded = historyAll.filter(r => r.period === mk);
+    if (recorded.length){
+      return { recorded: true, rows: recorded.map(r => ({
+        name: partnerById[r.partner_id] ? partnerById[r.partner_id].name : "—",
+        share_percent: partnerById[r.partner_id] ? partnerById[r.partner_id].share_percent : 0,
+        collected: r.collected, entitled: r.share_amount + r.opening_balance, net: r.net
+      })) };
+    }
+    const computed = await this.computeSettlement(mk);
+    return { recorded: false, rows: computed.rows.map(r => ({ name:r.name, share_percent:r.share_percent, collected:r.collected, entitled:r.entitled, net:r.net })) };
   },
 
   // ---- Data safety ----
@@ -1173,7 +1263,10 @@ Screens.dashboard = async function(){
   Shell("myTenants", "Dashboard", html, {
     logoImg: "icons/header-logo.png",
     fab: fabWrap("Add payment", "add", "openAddPayment()"),
-    headerRight: `<button class="icon-btn" onclick="openSnapshotModal()" title="Monthly snapshot">${ic("photo_camera")}</button>`
+    headerRight: `<div style="display:flex;gap:6px;">
+      <button class="icon-btn" onclick="openSnapshotModal()" title="Monthly snapshot">${ic("photo_camera")}</button>
+      <button class="icon-btn" onclick="openMonthlyReportModal()" title="Monthly report (PDF)">${ic("description")}</button>
+    </div>`
   });
 };
 
@@ -1984,6 +2077,187 @@ async function shareSnapshot(){
   }, "image/png");
 }
 
+// ---- Monthly Report (PDF export via the browser's print engine) ----
+function openMonthlyReportModal(){
+  document.getElementById("modal-root")?.remove();
+  const root = document.createElement("div"); root.id="modal-root"; document.body.appendChild(root);
+  const month = State.reportMonth || monthKey();
+  root.innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+      <div class="modal">
+        <div class="sheet-handle"></div>
+        <div class="modal-head"><h2>Monthly report</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
+        <div class="meta" style="margin-bottom:10px;">A detailed PDF covering collections, defaulters, property-by-property status, cash in hand, and partner settlement for the month you pick.</div>
+        <label>Month</label>
+        <input type="month" id="report-month" max="${monthKey()}" value="${month}">
+        <button class="btn" style="margin-top:16px;" onclick="exportMonthlyReportPdf()">${ic("picture_as_pdf")}Export PDF</button>
+        <div class="meta" style="margin-top:10px;">This opens your browser's print dialog — choose "Save as PDF" as the destination.</div>
+      </div>
+    </div>
+  `;
+}
+async function buildMonthlyReportData(mk){
+  const [collected, cashRows, monthlyStatuses, portfolio, trend, defaulters, partnerSettlement, transfersAll] = await Promise.all([
+    Repo.totalCollectedForMonth(mk), Repo.cashInHandByReceiver(), Repo.monthlyStatusForAllTenants(mk),
+    Repo.portfolioTotals(), Repo.monthlyCollections(6, mk), Repo.defaultersAsOf(mk),
+    Repo.reportPartnerSettlementSummary(mk), Repo.transferHistory()
+  ]);
+  const outstandingTotal = defaulters.reduce((s,t)=>s+t.current_balance,0);
+  const cashTotal = cashRows.reduce((s,r)=>s+r.amount,0);
+  const paidCount = monthlyStatuses.filter(s=>s.status==="paid").length;
+  const partialCount = monthlyStatuses.filter(s=>s.status==="partial").length;
+  const dueCount = monthlyStatuses.filter(s=>s.status==="due").length;
+
+  const byPropMap = {};
+  for (const t of defaulters){
+    const key = t.property ? t.property.name : "Unknown property";
+    byPropMap[key] = (byPropMap[key]||0) + t.current_balance;
+  }
+  const outstandingByProperty = Object.entries(byPropMap).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
+
+  const propMap = {};
+  for (const row of monthlyStatuses){
+    const pname = row.property ? row.property.name : "Unknown property";
+    (propMap[pname] ||= []).push(row);
+  }
+  const propertyDetail = Object.entries(propMap)
+    .map(([name, rows]) => ({ name, rows: rows.sort((a,b)=>a.tenant.name.localeCompare(b.tenant.name)) }))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+
+  const transfersThisPeriod = transfersAll.filter(t=>t.period===mk);
+
+  return { mk, collected, outstandingTotal, cashTotal, cashRows, paidCount, partialCount, dueCount, portfolio, trend, defaulters, outstandingByProperty, propertyDetail, partnerSettlement, transfersThisPeriod };
+}
+function buildMonthlyReportHtml(data){
+  const generatedDate = fmtDate(todayISO());
+  const periodLabel = fmtMonth(data.mk);
+  const totalTenantsThisMonth = data.paidCount + data.partialCount + data.dueCount;
+  const rHeader = `
+    <div class="r-header">
+      <div class="r-brand"><img src="icons/icon-192.png" class="r-logo" alt=""><div class="r-brand-name">myTenants</div></div>
+      <div class="r-doc-title"><div class="t1">Monthly Report</div><div class="t2">${esc(periodLabel)}</div></div>
+    </div>`;
+  const rFooter = (n,total) => `<div class="r-footer"><div class="inner"><span>myTenants — Monthly Report</span><span>Page ${n} of ${total}</span></div></div>`;
+
+  const page1 = `
+    <div class="r-page">
+      ${rHeader}
+      <h1 class="r-cover-title">${esc(periodLabel)} — Portfolio Summary</h1>
+      <div class="r-cover-sub">Generated ${esc(generatedDate)} · Covers ${data.portfolio.properties} propert${data.portfolio.properties===1?"y":"ies"}, ${data.portfolio.tenants} tenants</div>
+
+      <div class="r-stat-grid">
+        <div class="r-stat-box"><div class="r-label">COLLECTED THIS MONTH</div><div class="r-value">${fmtMoney(data.collected)}</div></div>
+        <div class="r-stat-box"><div class="r-label">OUTSTANDING RENT (AS OF MONTH END)</div><div class="r-value">${fmtMoney(data.outstandingTotal)}</div><div class="r-caption">Unpaid rent still owed by tenants</div></div>
+        <div class="r-stat-box"><div class="r-label">CASH IN HAND (UNSETTLED)</div><div class="r-value">${fmtMoney(data.cashTotal)}</div><div class="r-caption">Collected from tenants, not yet split between partners — may include earlier months too</div></div>
+        <div class="r-stat-box"><div class="r-label">TENANTS PAID</div><div class="r-value">${data.paidCount} / ${totalTenantsThisMonth}</div></div>
+      </div>
+
+      <div class="r-chart-box">
+        <div class="r-ct">Collections trend — last 6 months</div>
+        <div class="r-cs">Rent payments only</div>
+        ${data.trend.some(t=>t.value>0) ? svgBarChart(data.trend, {height:130}) : `<div class="r-empty">No payments recorded in this range</div>`}
+      </div>
+
+      <div class="r-two-col">
+        <div class="r-chart-box">
+          <div class="r-ct">Outstanding rent by property</div>
+          <div class="r-cs">Where outstanding rent sits</div>
+          ${data.outstandingByProperty.length ? `<div class="chart-flex">${svgDonut(data.outstandingByProperty, {size:110, stroke:14, centerLabel:fmtMoney(data.outstandingTotal).replace("₹","₹\n")})}${chartLegend(data.outstandingByProperty)}</div>` : `<div class="r-empty">No outstanding rent this month</div>`}
+        </div>
+        <div class="r-chart-box">
+          <div class="r-ct">Tenant status this month</div>
+          <div class="r-cs">Across the whole portfolio</div>
+          <table>
+            <tr><td>Paid</td><td class="r-num" style="color:#1E6E3C;font-weight:700;">${data.paidCount}</td></tr>
+            <tr><td>Partial</td><td class="r-num" style="color:#6F5D1E;font-weight:700;">${data.partialCount}</td></tr>
+            <tr><td>Due</td><td class="r-num" style="color:#BA1A1A;font-weight:700;">${data.dueCount}</td></tr>
+          </table>
+        </div>
+      </div>
+      ${rFooter(1,3)}
+    </div>`;
+
+  const defaultersTable = data.defaulters.length ? `
+    <table>
+      <tr><th>Tenant</th><th>Property</th><th class="r-num">Amount due</th></tr>
+      ${data.defaulters.map(t=>`<tr><td>${esc(t.name)}</td><td>${esc(t.property?t.property.name:"—")}</td><td class="r-num">${fmtMoney(t.current_balance)}</td></tr>`).join("")}
+      <tr class="r-row-total"><td colspan="2">Total outstanding</td><td class="r-num">${fmtMoney(data.outstandingTotal)}</td></tr>
+    </table>` : `<div class="r-empty">No tenants owe anything this month.</div>`;
+
+  const propertySections = data.propertyDetail.length ? data.propertyDetail.map(p => `
+    <div class="r-section-title">Property detail — ${esc(p.name)}</div>
+    <table>
+      <tr><th>Tenant</th><th class="r-num">Monthly rent</th><th class="r-num">Paid this month</th><th>Status</th></tr>
+      ${p.rows.map(r => `
+        <tr>
+          <td>${esc(r.tenant.name)}${r.tenant.archived?" (moved out)":""}</td>
+          <td class="r-num">${fmtMoney(r.due)}</td>
+          <td class="r-num">${fmtMoney(r.paid)}</td>
+          <td><span class="r-pill ${r.status}">${r.status==="paid"?"Paid":r.status==="partial"?"Partial":"Due"}</span></td>
+        </tr>`).join("")}
+    </table>`).join("") : `<div class="r-empty">No properties with tenants yet.</div>`;
+
+  const page2 = `
+    <div class="r-page">
+      ${rHeader}
+      <div class="r-section-title">Defaulter list</div>
+      ${defaultersTable}
+      ${propertySections}
+      ${rFooter(2,3)}
+    </div>`;
+
+  const cashTable = data.cashRows.length ? `
+    <table>
+      <tr><th>Receiver</th><th>Reports to</th><th class="r-num">Amount held</th></tr>
+      ${data.cashRows.map(r=>`<tr><td>${esc(r.receiver.name)}</td><td>${r.partner?esc(r.partner.name)+"'s pool":"No partner linked"}</td><td class="r-num">${fmtMoney(r.amount)}</td></tr>`).join("")}
+      <tr class="r-row-total"><td colspan="2">Total unsettled</td><td class="r-num">${fmtMoney(data.cashTotal)}</td></tr>
+    </table>` : `<div class="r-empty">No cash currently held by any receiver.</div>`;
+
+  const settlementTable = data.partnerSettlement.rows.length ? `
+    <table>
+      <tr><th>Partner</th><th class="r-num">Share</th><th class="r-num">Collected</th><th class="r-num">Entitled</th><th class="r-num">Net position</th></tr>
+      ${data.partnerSettlement.rows.map(r=>{
+        const netLabel = Math.abs(r.net)<0.005 ? `<span style="color:#6B6A64;">Settled</span>`
+          : r.net>0 ? `<span style="color:#1E6E3C;font-weight:700;">Receives ${fmtMoney(r.net)}</span>`
+          : `<span style="color:#BA1A1A;font-weight:700;">Pays ${fmtMoney(Math.abs(r.net))}</span>`;
+        return `<tr><td>${esc(r.name)}</td><td class="r-num">${r.share_percent}%</td><td class="r-num">${fmtMoney(r.collected)}</td><td class="r-num">${fmtMoney(r.entitled)}</td><td class="r-num">${netLabel}</td></tr>`;
+      }).join("")}
+    </table>
+    <div class="r-note">"Collected" is cash gathered via receivers; "entitled" is their share of the final total (collected minus owner rent). Net position is the gap between the two — what they should pay in, or receive, to end up with exactly their fair share. See "Recorded transfers" below for who it actually moves between.</div>
+    ${!data.partnerSettlement.recorded ? `<div class="r-callout">No settlement has been recorded yet for ${esc(periodLabel)} — figures above are a live preview, not a finalized record.</div>` : ""}
+  ` : `<div class="r-empty">Add partners to see a settlement summary.</div>`;
+
+  const transfersTable = data.transfersThisPeriod.length ? `
+    <table>
+      <tr><th>From</th><th></th><th>To</th><th class="r-num">Amount</th><th>Status</th></tr>
+      ${data.transfersThisPeriod.map(t=>`<tr><td>${esc(t.from_name)}</td><td>→</td><td>${esc(t.to_name)}</td><td class="r-num">${fmtMoney(t.paid_amount)}</td><td><span class="r-pill ${t.status==='paid'?'paid':t.status==='partial'?'partial':'due'}">${t.status==='paid'?'Paid':t.status==='partial'?'Partial':'Unpaid'}</span></td></tr>`).join("")}
+    </table>
+    ${data.transfersThisPeriod.some(t=>t.remaining_amount>0.004) ? `<div class="r-callout">${data.transfersThisPeriod.filter(t=>t.remaining_amount>0.004).map(t=>`${fmtMoney(t.remaining_amount)} still owed from ${esc(t.from_name)} to ${esc(t.to_name)}`).join("; ")} — carried forward.</div>` : ""}
+  ` : `<div class="r-empty">No settlement has been recorded for ${esc(periodLabel)} yet.</div>`;
+
+  const page3 = `
+    <div class="r-page">
+      ${rHeader}
+      <div class="r-section-title">Cash in hand — by receiver</div>
+      ${cashTable}
+      <div class="r-section-title">Partner settlement summary</div>
+      ${settlementTable}
+      <div class="r-section-title">Recorded transfers this period</div>
+      ${transfersTable}
+      ${rFooter(3,3)}
+    </div>`;
+
+  return page1 + page2 + page3;
+}
+async function exportMonthlyReportPdf(){
+  const mk = document.getElementById("report-month").value || monthKey();
+  State.reportMonth = mk;
+  const data = await buildMonthlyReportData(mk);
+  document.getElementById("report-print-root").innerHTML = buildMonthlyReportHtml(data);
+  closeModal();
+  setTimeout(() => window.print(), 150);
+}
+
 // ---- Add Payment (full screen bottom sheet) ----
 function receiverPickerHtml(receivers, partnerById, opts={}){
   const isMulti = !!opts.multi;
@@ -2301,6 +2575,7 @@ Object.assign(window, {
   savePartner, updatePartnerSave, removePartner,
   saveReceiver, removeReceiver, importBackup,
   openSnapshotModal, renderSnapshotPreview, downloadSnapshot, shareSnapshot,
+  openMonthlyReportModal, exportMonthlyReportPdf,
   openAddPayment, apToggleRepair, apReceiptChosen, apShowMultiSplit, apShowSingleReceiver, apAddSplitRow, apRefreshSplitSum, submitAddPayment,
   openTxnDetail, openEditTxn, openEditPayment, submitEditPayment, openEditAdjustment, submitEditAdjustment, voidTxnConfirm, deleteTxnPermanentlyConfirm, submitSettlement, toggleTransferPaid, refreshTransferNote, Repo, State
 });
