@@ -427,13 +427,14 @@ const Repo = {
   async tenantCountForProperty(propertyId){ return (await this.tenantsForProperty(propertyId)).filter(t=>!t.archived).length; },
 
   // ---- Tenants & accrual ----
-  async addTenant({property_id, name, monthly_rent}){
+  async addTenant({property_id, name, monthly_rent, phone}){
     const rate = Number(monthly_rent)||0;
     const startMk = monthKey();
     const t = {
       id:uid(), property_id, name, monthly_rent:rate, current_balance:0,
       last_accrual_month: startMk, start_date: todayISO(), archived:false,
-      rent_history: [{effective_month: startMk, rent: rate}]
+      rent_history: [{effective_month: startMk, rent: rate}],
+      phone: (phone||"").trim()
     };
     await put("tenants", t);
     // A brand-new tenant owes rent for their move-in month right away — don't
@@ -1260,11 +1261,27 @@ Screens.defaulters = async function(){
           <div><div class="name">${esc(t.name)}</div><div class="meta">${esc(t.property?t.property.name:"")}</div></div>
           <span class="chip due num">${fmtMoney(t.current_balance)}</span>
         </div>
-        <button class="btn secondary small" style="margin-top:10px;width:100%;" onclick="event.stopPropagation(); openAddPayment('${t.id}')">${ic("payments")}Record payment</button>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn secondary small" style="flex:1;" onclick="event.stopPropagation(); openAddPayment('${t.id}')">${ic("payments")}Record payment</button>
+          <button class="btn small" style="flex:1;background:#25D366;" onclick="event.stopPropagation(); requestPaymentViaWhatsApp('${t.id}')">${ic("chat")}WhatsApp</button>
+        </div>
       </div>`).join("") : `<div class="empty">${ic("celebration")}<div class="big">No defaulters</div>Everyone's paid up.</div>`}
   `;
   Shell("Defaulter list", `${list.length} tenant${list.length===1?"":"s"} owing`, html);
 };
+async function requestPaymentViaWhatsApp(tenantId){
+  const t = await get("tenants", tenantId);
+  if (!t) return;
+  const property = await get("properties", t.property_id);
+  const due = t.current_balance||0;
+  const message = `Hi, this is a reminder that the rent payment of ${fmtMoney(due)} for ${t.name}${property?` (${property.name})`:""} is currently pending. Kindly make the payment at your earliest convenience. Thank you!`;
+  const phoneDigits = (t.phone||"").replace(/[^0-9]/g,"");
+  const url = phoneDigits
+    ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}`
+    : `https://wa.me/?text=${encodeURIComponent(message)}`;
+  if (!phoneDigits) toast("No phone number saved — pick a chat in WhatsApp to send to");
+  window.open(url, "_blank");
+}
 
 // ---------- Cash in hand ----------
 Screens.cash = async function(){
@@ -1481,13 +1498,15 @@ Modals.addTenant = (_, root) => {
   root.innerHTML = modalShell("Add tenant", `
     <label>Tenant / shop name</label><input id="m-name" type="text">
     <label>Monthly rent</label><input id="m-rent" type="number" step="0.01">
+    <label>Phone number (optional)</label>
+    <input id="m-phone" type="tel" placeholder="e.g. 91XXXXXXXXXX, for WhatsApp reminders">
     <button class="btn" style="margin-top:16px;" onclick="saveTenant()">Save tenant</button>
   `);
 };
 async function saveTenant(){
   const name = document.getElementById("m-name").value.trim();
   if (!name) return toast("Enter a tenant name");
-  await Repo.addTenant({property_id: State.propertyId, name, monthly_rent: document.getElementById("m-rent").value});
+  await Repo.addTenant({property_id: State.propertyId, name, monthly_rent: document.getElementById("m-rent").value, phone: document.getElementById("m-phone").value.trim()});
   closeModal(); render();
 }
 Modals.editTenant = async (_, root, errMsg) => {
@@ -1499,6 +1518,8 @@ Modals.editTenant = async (_, root, errMsg) => {
   root.innerHTML = modalShell("Edit tenant", `
     ${errMsg ? `<div class="warn-box">${ic("error")}${esc(errMsg)}</div>` : ""}
     <label>Tenant / shop name</label><input id="m-name" type="text" value="${esc(t.name)}">
+    <label>Phone number (optional)</label>
+    <input id="m-phone" type="tel" value="${esc(t.phone||"")}" placeholder="e.g. 91XXXXXXXXXX, for WhatsApp reminders">
 
     <label>Monthly rent</label>
     <div class="card" style="margin-bottom:2px;">
@@ -1517,7 +1538,7 @@ Modals.editTenant = async (_, root, errMsg) => {
   `);
 };
 async function updateTenantSave(id){
-  await Repo.updateTenant(id, {name:document.getElementById("m-name").value.trim()});
+  await Repo.updateTenant(id, {name:document.getElementById("m-name").value.trim(), phone:document.getElementById("m-phone").value.trim()});
   closeModal(); render();
 }
 async function toggleArchiveTenant(id, archived){
@@ -2164,7 +2185,7 @@ function modalShell(title, inner){
 Object.assign(window, {
   goTab, openPropertyTenants, openTenantLedger, openModal, closeModal, setTenantsViewMode,
   saveProperty, updatePropertySave, deletePropertyConfirm,
-  saveTenant, updateTenantSave, deleteTenantConfirm, forceDeleteTenantConfirm, toggleArchiveTenant, submitAdjustBalance,
+  saveTenant, updateTenantSave, deleteTenantConfirm, forceDeleteTenantConfirm, toggleArchiveTenant, submitAdjustBalance, requestPaymentViaWhatsApp,
   setRentChangeMode, refreshRentCorrectionPreview, submitCorrectRent, submitScheduleRent,
   savePartner, updatePartnerSave, removePartner,
   saveReceiver, removeReceiver, importBackup,

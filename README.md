@@ -188,6 +188,20 @@ happens), tap **Split between more than one person** to switch to the
 multi-receiver entry instead — same as before, each row's amount must add
 up to the total received.
 
+## Requesting payment via WhatsApp
+
+Each defaulter's card also has a **WhatsApp** button next to Record
+Payment. It opens WhatsApp with a pre-filled reminder message — the
+tenant's name, property, and exact amount owed — that you can review or
+edit before sending, since `wa.me` links only fill the message box, they
+never send automatically.
+
+If you've saved a phone number for that tenant (Edit Tenant → Phone
+number, include the country code, e.g. `91` for India with no `+` or
+leading `0`), it opens the chat with them directly. Without one, it opens
+WhatsApp's own contact picker instead — so the button works right away
+either way, and gets more convenient once numbers are filled in.
+
 ## Recording a payment straight from Defaulters
 
 Each tenant on the Defaulter List now has a **Record payment** button, so
