@@ -1,0 +1,2193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>myTenants</title>
+<meta name="theme-color" content="#2F6B5E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="myTenants">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..600,0..1,-50..200&display=block" rel="stylesheet">
+<style>
+  :root{
+    /* ---- Material 3 tokens (custom teal seed) ---- */
+    --md-primary:#2F6B5E;
+    --md-on-primary:#FFFFFF;
+    --md-primary-container:#B6ECDC;
+    --md-on-primary-container:#00201A;
+    --md-secondary-container:#DCE8E2;
+    --md-on-secondary-container:#151E1B;
+    --md-surface:#F6F8F6;
+    --md-surface-1:#FFFFFF;
+    --md-surface-variant:#DDE5E0;
+    --md-on-surface:#191C1B;
+    --md-on-surface-variant:#48504C;
+    --md-outline:#79817D;
+    --md-outline-variant:#E2E6E2;
+    --md-error:#BA1A1A;
+    --md-error-container:#FFDAD6;
+    --md-on-error-container:#410002;
+    --md-tertiary:#6F5D1E;
+    --md-tertiary-container:#F6E1AC;
+    --md-on-tertiary-container:#241A00;
+    --md-success:#1E6E3C;
+    --md-success-container:#D8F3DF;
+
+    --shadow-1:0 1px 2px rgba(0,0,0,.24), 0 1px 3px 1px rgba(0,0,0,.12);
+    --shadow-2:0 1px 2px rgba(0,0,0,.20), 0 3px 8px 1px rgba(0,0,0,.14);
+    --shadow-3:0 4px 10px 2px rgba(0,0,0,.14), 0 2px 4px rgba(0,0,0,.22);
+
+    /* ---- aliases used throughout the app's CSS ---- */
+    --bg:var(--md-surface);
+    --surface:var(--md-surface-1);
+    --ink:var(--md-on-surface);
+    --ink-soft:var(--md-on-surface-variant);
+    --line:var(--md-outline-variant);
+    --accent:var(--md-primary);
+    --accent-ink:var(--md-on-primary-container);
+    --accent-soft:var(--md-primary-container);
+    --paid:var(--md-success);
+    --paid-bg:var(--md-success-container);
+    --due:var(--md-error);
+    --due-bg:var(--md-error-container);
+    --partial:var(--md-tertiary);
+    --partial-bg:var(--md-tertiary-container);
+    --radius:16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Roboto",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:15px;
+    line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  .msi{
+    font-family:'Material Symbols Outlined';
+    font-weight:normal;font-style:normal;
+    font-size:20px;line-height:1;letter-spacing:normal;text-transform:none;
+    display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;
+    -webkit-font-feature-settings:'liga';-webkit-font-smoothing:antialiased;
+    vertical-align:middle;
+  }
+  .num{font-variant-numeric:tabular-nums;}
+  h1,h2,h3{margin:0 0 4px 0;font-weight:600;letter-spacing:.1px;}
+  #app{
+    max-width:520px;margin:0 auto;min-height:100vh;background:var(--bg);
+    padding-bottom:92px;position:relative;
+  }
+  .topbar{
+    position:sticky;top:0;z-index:5;background:var(--bg);
+    padding:20px 16px 12px 16px;display:flex;align-items:center;justify-content:space-between;
+  }
+  .topbar h1{font-size:20px;color:var(--ink);}
+  .topbar .sub{color:var(--ink-soft);font-size:13px;}
+  .icon-btn{
+    background:var(--surface);border:none;border-radius:50%;
+    width:40px;height:40px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;color:var(--ink);box-shadow:var(--shadow-1);flex-shrink:0;
+    transition:transform .08s ease;
+  }
+  .icon-btn:active{transform:scale(.92);}
+  .content{padding:4px 16px 24px 16px;}
+
+  /* ---- Cards (Material elevated card) ---- */
+  .card{
+    background:var(--surface);border:none;border-radius:var(--radius);
+    padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow-1);
+    transition:box-shadow .12s ease, transform .08s ease;
+  }
+  .card.tap{cursor:pointer;}
+  .card.tap:active{transform:scale(.99);box-shadow:var(--shadow-1);}
+  .chart-card{background:var(--surface);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow-1);}
+  .chart-card .chart-title{font-size:13.5px;font-weight:600;color:var(--ink);margin-bottom:2px;}
+  .chart-card .chart-sub{font-size:12px;color:var(--ink-soft);margin-bottom:10px;}
+  .chart-empty{color:var(--ink-soft);font-size:13px;text-align:center;padding:20px 0;}
+
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .row + .row{margin-top:6px;}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+  .stat{background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-1);}
+  .stat .top-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .stat .ic-badge{width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;}
+  .stat .label{color:var(--ink-soft);font-size:12.5px;margin-bottom:2px;}
+  .stat .value{font-size:20px;font-weight:700;}
+  .section-title{font-size:13px;font-weight:600;color:var(--ink-soft);margin:20px 2px 10px 2px;display:flex;align-items:center;gap:6px;}
+
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:12.5px;font-weight:600;white-space:nowrap;}
+  .chip.paid{background:var(--paid-bg);color:var(--paid);}
+  .chip.due{background:var(--due-bg);color:var(--due);}
+  .chip.partial{background:var(--partial-bg);color:var(--partial);}
+  .chip.neutral{background:var(--accent-soft);color:var(--accent-ink);}
+  .chip .msi{font-size:14px;}
+
+  .name{font-weight:600;font-size:15px;}
+  .meta{color:var(--ink-soft);font-size:13px;margin-top:2px;}
+  .empty{text-align:center;color:var(--ink-soft);padding:40px 16px;border:1.5px dashed var(--line);border-radius:var(--radius);}
+  .empty .msi{font-size:32px;color:var(--md-outline);margin-bottom:8px;}
+  .empty .big{font-size:15px;color:var(--ink);margin-bottom:4px;font-weight:600;}
+
+  /* ---- Buttons (Material filled / tonal / outlined) ---- */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    background:var(--accent);color:var(--md-on-primary);border:none;border-radius:20px;
+    padding:12px 20px;font-size:14.5px;font-weight:600;cursor:pointer;width:100%;
+    font-family:inherit;transition:transform .08s ease, box-shadow .12s ease;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn.secondary{background:var(--accent-soft);color:var(--accent-ink);}
+  .btn.danger{background:var(--due);color:#fff;}
+  .btn.small{width:auto;padding:8px 14px;font-size:13px;}
+  .btn.ghost{background:transparent;color:var(--accent);border:1.5px solid var(--md-outline-variant);}
+  .link-btn{background:none;border:none;color:var(--accent);font-size:13.5px;font-weight:600;cursor:pointer;padding:4px 2px;font-family:inherit;display:inline-flex;align-items:center;gap:4px;}
+  .link-btn.danger-link{color:var(--due);}
+
+  /* ---- Extended FAB ---- */
+  .fab-wrap{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;width:100%;max-width:488px;display:flex;justify-content:flex-end;padding:0 16px;pointer-events:none;z-index:6;}
+  .fab-btn{
+    pointer-events:auto;background:var(--accent-soft);color:var(--accent-ink);border:none;
+    display:inline-flex;align-items:center;gap:8px;padding:16px 22px 16px 18px;border-radius:18px;
+    box-shadow:var(--shadow-3);font-weight:600;font-size:14.5px;cursor:pointer;font-family:inherit;
+    transition:transform .08s ease;
+  }
+  .fab-btn:active{transform:scale(.96);}
+
+  label{display:block;font-size:13px;color:var(--ink-soft);margin:14px 0 5px 0;font-weight:500;}
+  label:first-of-type{margin-top:0;}
+  input[type=text],input[type=number],input[type=date],input[type=month],select,textarea{
+    width:100%;padding:12px 14px;border:1.5px solid var(--md-outline-variant);border-radius:12px;
+    font-size:14.5px;background:var(--surface);color:var(--ink);font-family:inherit;
+  }
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);}
+  .field-row{display:flex;gap:10px;}
+  .field-row > div{flex:1;}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;}
+  .switch{position:relative;width:44px;height:26px;flex-shrink:0;}
+  .switch input{opacity:0;width:0;height:0;}
+  .slider{position:absolute;inset:0;background:var(--md-outline-variant);border-radius:24px;transition:.15s;cursor:pointer;}
+  .slider:before{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.15s;box-shadow:var(--shadow-1);}
+  input:checked + .slider{background:var(--accent);}
+  input:checked + .slider:before{transform:translateX(18px);}
+  .split-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .split-row select{flex:2;}
+  .split-row input{flex:1;}
+  .split-sum{font-size:13px;color:var(--ink-soft);margin-top:2px;font-weight:500;}
+  .split-sum.ok{color:var(--paid);}
+  .split-sum.bad{color:var(--due);}
+
+  /* ---- Bottom navigation (Material 3 nav bar) ---- */
+  .tabs{
+    position:fixed;bottom:0;left:50%;transform:translateX(-50%);max-width:520px;width:100%;
+    background:var(--surface);box-shadow:var(--shadow-2);display:flex;z-index:10;
+    padding:10px 6px calc(6px + env(safe-area-inset-bottom)) 6px;
+  }
+  .tab{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding:2px 2px;color:var(--ink-soft);cursor:pointer;font-size:11px;font-weight:500;
+    background:none;border:none;font-family:inherit;
+  }
+  .tab .ic-wrap{padding:5px 20px;border-radius:16px;transition:background .12s ease;display:flex;}
+  .tab.active{color:var(--ink);font-weight:700;}
+  .tab.active .ic-wrap{background:var(--accent-soft);color:var(--accent-ink);}
+
+  /* ---- Bottom sheet modal ---- */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(20,24,22,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .15s ease;}
+  .modal{background:var(--bg);width:100%;max-width:520px;max-height:92vh;overflow-y:auto;border-radius:28px 28px 0 0;padding:10px 16px calc(24px + env(safe-area-inset-bottom)) 16px;box-shadow:var(--shadow-3);animation:slideUp .18s cubic-bezier(.2,.7,.3,1);}
+  .sheet-handle{width:32px;height:4px;background:var(--md-outline-variant);border-radius:4px;margin:2px auto 14px auto;}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .modal-head h2{font-size:18px;}
+  .back-btn{background:none;border:none;color:var(--accent);font-size:14.5px;font-weight:600;cursor:pointer;padding:6px 0;font-family:inherit;display:inline-flex;align-items:center;gap:4px;}
+  @keyframes slideUp{from{transform:translateY(28px);opacity:.4;}to{transform:translateY(0);opacity:1;}}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+
+  .divider{height:1px;background:var(--line);margin:14px 0;}
+  .ledger-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-row .l1{color:var(--ink-soft);font-size:12.5px;}
+  .audit-row{font-size:12.5px;color:var(--ink-soft);padding:7px 0;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;}
+  .warn-box{background:var(--partial-bg);color:var(--partial);border-radius:12px;padding:12px 14px;font-size:13px;margin-bottom:12px;display:flex;gap:8px;align-items:flex-start;}
+  .toast{
+    position:fixed;bottom:104px;left:50%;transform:translateX(-50%);
+    background:#2E312F;color:#fff;padding:11px 18px;border-radius:8px;font-size:13.5px;
+    z-index:40;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;box-shadow:var(--shadow-2);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+  .file-chip{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);color:var(--accent-ink);border-radius:8px;padding:7px 11px;font-size:13px;margin-top:6px;}
+
+  /* ---- Legend for donut/bar charts ---- */
+  .legend{display:flex;flex-direction:column;gap:7px;margin-top:12px;}
+  .legend-item{display:flex;align-items:center;justify-content:space-between;font-size:13px;}
+  .legend-item .lk{display:flex;align-items:center;gap:8px;color:var(--ink);}
+  .legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
+  .chart-flex{display:flex;align-items:center;gap:18px;}
+  .chart-flex .legend{flex:1;margin-top:0;}
+
+  /* ---- Segmented control (Overall / This month toggle) ---- */
+  .segmented{display:flex;background:var(--md-surface-variant);border-radius:12px;padding:3px;margin-bottom:12px;}
+  .segmented button{flex:1;background:none;border:none;padding:8px 10px;border-radius:9px;font-size:13px;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:inherit;}
+  .segmented button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-1);}
+  .month-summary{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);margin:2px 2px 12px 2px;flex-wrap:wrap;}
+  .month-summary b{color:var(--ink);}
+  .snapshot-canvas-wrap{background:var(--md-surface-variant);border-radius:12px;padding:10px;margin-bottom:14px;display:flex;justify-content:center;}
+  .snapshot-canvas-wrap canvas{width:100%;max-width:340px;height:auto;border-radius:8px;box-shadow:var(--shadow-2);}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+/* =========================================================================
+   myTenants — Web build
+   Backend  : IndexedDB local data layer + Repository (business rules)
+   Frontend : Material-style, card-based UI with SVG dashboard charts
+   Mirrors the schema and rules in architecture-flow-design.md.
+   ========================================================================= */
+
+const DB_NAME = "mytenants";
+const DB_VERSION = 1;
+const STORES = ["properties","tenants","partners","receivers","transactions","transaction_splits","partner_settlements","audit_log"];
+const PALETTE = ["#2F6B5E","#B3402A","#9A6B00","#3B6EA5","#7E57C2","#4B635B","#C2410C","#0E7490"];
+
+// ---------- tiny helpers ----------
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(16).slice(2));
+const todayISO = () => new Date().toISOString().slice(0,10);
+const monthKey = (d) => (d || todayISO()).slice(0,7); // "YYYY-MM"
+const fmtMoney = (n) => "₹" + (Math.round((n||0)*100)/100).toLocaleString("en-IN", {minimumFractionDigits: 0, maximumFractionDigits: 2});
+const fmtMonth = (mk) => { if(!mk) return "—"; const [y,m]=mk.split("-"); return new Date(y, m-1, 1).toLocaleDateString("en-IN",{month:"short",year:"numeric"}); };
+const fmtMonthShort = (mk) => { const [y,m]=mk.split("-"); return new Date(y, m-1, 1).toLocaleDateString("en-IN",{month:"short"}); };
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "—";
+const esc = (s) => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const addMonths = (mk, n) => { const [y,m]=mk.split("-").map(Number); const d=new Date(y, m-1+n, 1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); };
+const monthsBetween = (a,b) => { const [ay,am]=a.split("-").map(Number); const [by,bm]=b.split("-").map(Number); return (by-ay)*12+(bm-am); };
+// A tenant's rent can change over time (a correction, or a scheduled increase).
+// rent_history is a list of {effective_month, rent} sorted ascending; a month's
+// rate is whichever entry's effective_month is the latest one <= that month.
+// Tenants created before this existed have no rent_history — fall back to a
+// single implicit entry from their start month at their stored monthly_rent,
+// which reproduces the old single-rate behavior exactly.
+function rentRateForMonth(tenant, mk){
+  const history = (tenant.rent_history && tenant.rent_history.length) ? tenant.rent_history : [{effective_month: monthKey(tenant.start_date), rent: tenant.monthly_rent||0}];
+  let rate = history[0].rent;
+  for (const h of history){ if (h.effective_month <= mk) rate = h.rent; else break; }
+  return rate;
+}
+const ic = (name) => `<span class="msi">${name}</span>`;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"), 2200); }
+
+// ---------- tiny SVG chart helpers (no external chart library) ----------
+function svgBarChart(data, opts={}){
+  const w = opts.width || 320, h = opts.height || 150;
+  const padBottom = 22, padTop = 16;
+  const n = Math.max(1, data.length);
+  const gap = 10;
+  const barW = (w - gap*(n+1)) / n;
+  const max = Math.max(1, ...data.map(d=>d.value));
+  const color = opts.color || "#2F6B5E";
+  const labelSize = 10, valueSize = 9.5;
+  // Rough character-width heuristic (Roboto at this weight averages ~0.56em per
+  // char) so long labels truncate to fit their bar's slot instead of spilling
+  // into their neighbors — that spillover was the reported overlap.
+  const truncateFor = (s, fontSize) => {
+    const maxChars = Math.max(3, Math.floor((barW + gap - 4) / (fontSize*0.56)));
+    return s.length > maxChars ? s.slice(0, maxChars-1) + "…" : s;
+  };
+  const bars = data.map((d,i)=>{
+    const bh = Math.max(2, (d.value/max) * (h - padTop - padBottom));
+    const x = gap + i*(barW+gap);
+    const y = h - padBottom - bh;
+    const showVal = d.value > 0 ? fmtMoney(d.value).replace("₹","") : "";
+    return `<g>
+      <rect x="${x}" y="${y}" width="${barW}" height="${bh}" rx="5" fill="${color}"><title>${esc(d.label)}: ${fmtMoney(d.value)}</title></rect>
+      ${d.value>0 ? `<text x="${x+barW/2}" y="${y-5}" text-anchor="middle" font-size="${valueSize}" font-family="Roboto" fill="var(--ink-soft)">${esc(truncateFor(showVal, valueSize))}</text>` : ""}
+      <text x="${x+barW/2}" y="${h-6}" text-anchor="middle" font-size="${labelSize}" font-family="Roboto" fill="var(--ink-soft)">${esc(truncateFor(d.label, labelSize))}<title>${esc(d.label)}</title></text>
+    </g>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="xMidYMid meet">${bars}</svg>`;
+}
+function svgDonut(data, opts={}){
+  const size = opts.size || 132, stroke = opts.stroke || 18;
+  const total = data.reduce((s,d)=>s+d.value,0);
+  const r = (size-stroke)/2, cx=size/2, cy=size/2;
+  const c = 2*Math.PI*r;
+  let offset = 0;
+  const segs = total > 0 ? data.map((d,i)=>{
+    const frac = d.value/total;
+    const len = Math.max(0, frac*c - 1.5); // small gap between segments
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${PALETTE[i%PALETTE.length]}" stroke-width="${stroke}"
+      stroke-dasharray="${len} ${c-len}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})" stroke-linecap="round"></circle>`;
+    offset += frac*c;
+    return seg;
+  }).join("") : "";
+  const centerLabel = opts.centerLabel || "";
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--line)" stroke-width="${stroke}"></circle>
+    ${segs}
+    ${centerLabel ? `<text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="13" font-weight="700" font-family="Roboto" fill="var(--ink)">${esc(centerLabel)}</text>` : ""}
+  </svg>`;
+}
+function chartLegend(data, opts={}){
+  const total = data.reduce((s,d)=>s+d.value,0) || 1;
+  return `<div class="legend">${data.map((d,i)=>`
+    <div class="legend-item">
+      <span class="lk"><span class="legend-dot" style="background:${PALETTE[i%PALETTE.length]}"></span>${esc(d.label)}</span>
+      <span class="num" style="font-weight:600;">${opts.showPct ? Math.round(d.value/total*100)+"%" : fmtMoney(d.value)}</span>
+    </div>`).join("")}</div>`;
+}
+
+// ---------- IndexedDB wrapper ----------
+let _db = null;
+function openDB(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      STORES.forEach(name => { if(!db.objectStoreNames.contains(name)) db.createObjectStore(name, {keyPath:"id"}); });
+    };
+    req.onsuccess = () => { _db = req.result; resolve(_db); };
+    req.onerror = () => reject(req.error);
+  });
+}
+function tx(store, mode, fn){
+  return new Promise((resolve, reject) => {
+    const t = _db.transaction(store, mode);
+    const s = t.objectStore(store);
+    const result = fn(s);
+    t.oncomplete = () => resolve(result);
+    t.onerror = () => reject(t.error);
+  });
+}
+function getAll(store){ return new Promise((res,rej)=>{ const t=_db.transaction(store,"readonly"); const r=t.objectStore(store).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function get(store, id){ return new Promise((res,rej)=>{ const t=_db.transaction(store,"readonly"); const r=t.objectStore(store).get(id); r.onsuccess=()=>res(r.result||null); r.onerror=()=>rej(r.error); }); }
+function put(store, obj){ return tx(store,"readwrite", s => s.put(obj)); }
+function del(store, id){ return tx(store,"readwrite", s => s.delete(id)); }
+
+// =====================================================================
+// Repository — every business rule lives here (the "backend" layer).
+// Screens never touch IndexedDB directly, only through these methods.
+// =====================================================================
+const Repo = {
+
+  // ---- Partners ----
+  async allPartners(){ return (await getAll("partners")).sort((a,b)=>a.name.localeCompare(b.name)); },
+  async addPartner({name, share_percent}){
+    const p = {id:uid(), name, share_percent:Number(share_percent)||0, running_balance:0};
+    await put("partners", p); return p;
+  },
+  async updatePartner(id, patch){
+    const p = await get("partners", id); if(!p) throw new Error("Partner not found");
+    Object.assign(p, patch); await put("partners", p); return p;
+  },
+  async removePartner(id){
+    const p = await get("partners", id); if(!p) return;
+    if (Math.round((p.running_balance||0)*100) !== 0) throw new Error("Can't remove a partner with a nonzero balance. Settle them first.");
+    const receivers = await getAll("receivers");
+    if (receivers.some(r => r.partner_id === id)) throw new Error("Can't remove a partner with linked receivers. Reassign or remove those receivers first.");
+    await del("partners", id);
+  },
+  async validateShares(){
+    const partners = await this.allPartners();
+    const sum = partners.reduce((s,p)=>s+(Number(p.share_percent)||0), 0);
+    return { ok: Math.abs(sum-100) < 0.01, sum, partners };
+  },
+
+  // ---- Receivers ----
+  async allReceivers(){ return (await getAll("receivers")).sort((a,b)=>a.name.localeCompare(b.name)); },
+  async addReceiver({name, partner_id}){ const r={id:uid(), name, partner_id}; await put("receivers", r); return r; },
+  async updateReceiver(id, patch){ const r=await get("receivers", id); if(!r) throw new Error("Receiver not found"); Object.assign(r, patch); await put("receivers", r); return r; },
+  async removeReceiver(id){
+    const splits = await getAll("transaction_splits");
+    if (splits.some(s => s.receiver_id === id)) throw new Error("Can't remove a receiver with recorded transactions.");
+    await del("receivers", id);
+  },
+
+  // ---- Properties ----
+  async allProperties(){ return (await getAll("properties")).sort((a,b)=>a.name.localeCompare(b.name)); },
+  async addProperty({name, type, owner_name, owner_rent_amount}){
+    const p = {id:uid(), name, type:type||"", owner_name:owner_name||"", owner_rent_amount:Number(owner_rent_amount)||0};
+    await put("properties", p); return p;
+  },
+  async updateProperty(id, patch){ const p=await get("properties", id); if(!p) throw new Error("Property not found"); Object.assign(p, patch); await put("properties", p); return p; },
+  async deleteProperty(id){
+    const tenants = await getAll("tenants");
+    if (tenants.some(t => t.property_id === id)) throw new Error("Can't delete a property that still has tenants.");
+    await del("properties", id);
+  },
+  async tenantsForProperty(propertyId){ return (await getAll("tenants")).filter(t=>t.property_id===propertyId).sort((a,b)=>a.name.localeCompare(b.name)); },
+  async tenantCountForProperty(propertyId){ return (await this.tenantsForProperty(propertyId)).filter(t=>!t.archived).length; },
+
+  // ---- Tenants & accrual ----
+  async addTenant({property_id, name, monthly_rent}){
+    const rate = Number(monthly_rent)||0;
+    const startMk = monthKey();
+    const t = {
+      id:uid(), property_id, name, monthly_rent:rate, current_balance:0,
+      last_accrual_month: startMk, start_date: todayISO(), archived:false,
+      rent_history: [{effective_month: startMk, rent: rate}]
+    };
+    await put("tenants", t);
+    // A brand-new tenant owes rent for their move-in month right away — don't
+    // make them wait for next calendar month's accrual pass to show as Due.
+    await this.accrueMonthlyRent(t);
+    return t;
+  },
+  async updateTenant(id, patch){ const t=await get("tenants", id); if(!t) throw new Error("Tenant not found"); Object.assign(t, patch); await put("tenants", t); return t; },
+  async deleteTenant(id){
+    const txns = await getAll("transactions");
+    if (txns.some(x => x.tenant_id === id && !x.is_voided)) throw new Error("This tenant has payment history, so deleting them would break the ledger. Use \u201cMark as moved out\u201d instead \u2014 it hides them from the active list but keeps every past payment on record.");
+    await del("tenants", id);
+  },
+  // Admin override for cleaning up test/typo data (e.g. while still setting the
+  // app up): deletes a tenant AND every one of their transactions, splits, and
+  // audit-log entries, regardless of history. Unlike deleteTenant, this leaves
+  // no trace and is not meant for real day-to-day corrections — use "Mark as
+  // moved out" or void/edit for those instead.
+  async forceDeleteTenant(id){
+    const txns = (await getAll("transactions")).filter(x=>x.tenant_id===id);
+    for (const x of txns){
+      for (const s of await this.splitsFor(x.id)) await del("transaction_splits", s.id);
+      for (const a of await this.auditLogFor(x.id)) await del("audit_log", a.id);
+      await del("transactions", x.id);
+    }
+    await del("tenants", id);
+  },
+  // Admin override for permanently removing a single transaction (and its
+  // splits/audit entries) instead of just voiding it — again, for cleaning up
+  // test/typo entries, not for correcting real records (edit or void those).
+  async deleteTransactionPermanently(id){
+    const txn = await get("transactions", id); if(!txn) return;
+    if (!txn.is_voided){
+      const tenant = await get("tenants", txn.tenant_id);
+      if (tenant){
+        if (txn.type === "ADJUSTMENT") tenant.current_balance = (tenant.current_balance||0) - (txn.adjustment_amount||0);
+        else tenant.current_balance = (tenant.current_balance||0) + (txn.total_amount + txn.repair_amount);
+        await put("tenants", tenant);
+      }
+    }
+    for (const s of await this.splitsFor(id)) await del("transaction_splits", s.id);
+    for (const a of await this.auditLogFor(id)) await del("audit_log", a.id);
+    await del("transactions", id);
+  },
+  // Archive = "moved out". Keeps every past transaction and any balance owed intact;
+  // just marks the tenant inactive so the property's tenant list can hide/mute them.
+  async archiveTenant(id, archived=true){
+    const t = await get("tenants", id); if(!t) throw new Error("Tenant not found");
+    t.archived = !!archived;
+    await put("tenants", t);
+    return t;
+  },
+  // Fixes a mistake in the CURRENT rent rate — e.g. a typo'd 13,000 that should
+  // have been 12,000 all along. Corrects the latest rent_history entry in place
+  // (this was never a genuine change, so there's nothing to preserve about the
+  // old value) and retroactively adjusts the tenant's balance for every month
+  // already accrued under that wrong rate, logged as an auditable adjustment.
+  async correctCurrentRent(tenantId, newRate){
+    const tenant = await get("tenants", tenantId); if(!tenant) throw new Error("Tenant not found");
+    newRate = Number(newRate)||0;
+    const history = (tenant.rent_history && tenant.rent_history.length) ? [...tenant.rent_history] : [{effective_month: monthKey(tenant.start_date), rent: tenant.monthly_rent||0}];
+    const last = {...history[history.length-1]};
+    const oldRate = last.rent;
+    if (Math.round((newRate-oldRate)*100) === 0) throw new Error("That's already the current rent");
+    const accrualEnd = tenant.last_accrual_month || monthKey();
+    const monthsAtOldRate = last.effective_month <= accrualEnd ? monthsBetween(last.effective_month, accrualEnd) + 1 : 0;
+    last.rent = newRate;
+    history[history.length-1] = last;
+    tenant.rent_history = history;
+    tenant.monthly_rent = rentRateForMonth(tenant, monthKey());
+    await put("tenants", tenant);
+    const delta = (newRate - oldRate) * monthsAtOldRate;
+    if (Math.round(delta*100) !== 0){
+      await this.recordBalanceAdjustment({
+        tenant_id: tenantId, amount: delta,
+        note: `Rent corrected: ${fmtMoney(oldRate)} → ${fmtMoney(newRate)}/mo (${monthsAtOldRate} month${monthsAtOldRate===1?"":"s"} already charged, retroactively fixed)`,
+        date: todayISO()
+      });
+    }
+    return tenant;
+  },
+  // Records a genuine rent change (e.g. a yearly increase) taking effect from a
+  // chosen future month onward. Past accrual is untouched — it was correct at
+  // the rate that applied then — this only adds a new rent_history entry.
+  async scheduleRentChange(tenantId, newRate, effectiveMonth){
+    const tenant = await get("tenants", tenantId); if(!tenant) throw new Error("Tenant not found");
+    newRate = Number(newRate)||0;
+    const history = (tenant.rent_history && tenant.rent_history.length) ? [...tenant.rent_history] : [{effective_month: monthKey(tenant.start_date), rent: tenant.monthly_rent||0}];
+    const minMonth = addMonths(tenant.last_accrual_month || monthKey(), 1);
+    if (effectiveMonth < minMonth) throw new Error(`${fmtMonth(minMonth)} is the earliest this can take effect — earlier months are already accrued. Use "Correct current rent" instead if this fixes a mistake.`);
+    const filtered = history.filter(h => h.effective_month !== effectiveMonth);
+    filtered.push({effective_month: effectiveMonth, rent: newRate});
+    filtered.sort((a,b) => a.effective_month.localeCompare(b.effective_month));
+    tenant.rent_history = filtered;
+    tenant.monthly_rent = rentRateForMonth(tenant, monthKey());
+    await put("tenants", tenant);
+    return tenant;
+  },
+  // hasAnyTxnHint (optional): pass a precomputed Set of tenant_ids that have any
+  // transaction, so runDueAccruals doesn't re-query transactions per tenant.
+  async accrueMonthlyRent(tenant, hasAnyTxnHint){
+    const nowMk = monthKey();
+    let cursor = tenant.last_accrual_month || nowMk;
+    let added = 0, monthsAccrued = 0;
+    while (cursor < nowMk){
+      cursor = addMonths(cursor, 1);
+      added += rentRateForMonth(tenant, cursor);
+      monthsAccrued++;
+    }
+    // Safety net: a tenant whose move-in month equals their last accrual month
+    // and who has never had a single transaction can only be sitting at a zero
+    // balance because their very first month was never actually added (the bug
+    // this patches) — not because they've genuinely paid anything. Charge that
+    // first month now instead of waiting for the calendar to roll over.
+    if (monthsAccrued === 0 && (tenant.current_balance||0) === 0 && tenant.last_accrual_month === monthKey(tenant.start_date || nowMk)){
+      const hasAnyTxn = hasAnyTxnHint !== undefined ? hasAnyTxnHint : (await getAll("transactions")).some(x=>x.tenant_id===tenant.id);
+      if (!hasAnyTxn){ added += rentRateForMonth(tenant, nowMk); monthsAccrued = 1; }
+    }
+    const currentRate = rentRateForMonth(tenant, nowMk);
+    const rateFieldStale = Math.round((currentRate - (tenant.monthly_rent||0))*100) !== 0;
+    if (monthsAccrued > 0 || rateFieldStale){
+      if (monthsAccrued > 0) tenant.current_balance = (tenant.current_balance||0) + added;
+      tenant.monthly_rent = currentRate;
+      tenant.last_accrual_month = nowMk;
+      await put("tenants", tenant);
+    }
+    return tenant;
+  },
+  async runDueAccruals(){
+    const [tenants, txns] = await Promise.all([getAll("tenants"), getAll("transactions")]);
+    const tenantsWithTxns = new Set(txns.map(x=>x.tenant_id));
+    for (const t of tenants) await this.accrueMonthlyRent(t, tenantsWithTxns.has(t.id));
+  },
+  // Reconstructs Due / Paid rows for a tenant's ledger without storing a row per month.
+  async tenantLedgerRows(tenantId){
+    const tenant = await get("tenants", tenantId); if(!tenant) return {tenant:null, rows:[], balance:0};
+    const [txns, allSplits, receivers] = await Promise.all([
+      getAll("transactions").then(all=>all.filter(x=>x.tenant_id===tenantId).sort((a,b)=> a.date.localeCompare(b.date))),
+      getAll("transaction_splits"),
+      this.allReceivers()
+    ]);
+    const receiverById = Object.fromEntries(receivers.map(r=>[r.id,r]));
+    const receiverNamesFor = (txnId) => allSplits.filter(s=>s.transaction_id===txnId).map(s=>receiverById[s.receiver_id]?.name).filter(Boolean);
+    const events = [];
+    let cursor = monthKey(tenant.start_date);
+    const end = tenant.last_accrual_month || monthKey();
+    while (cursor <= end){
+      events.push({date: cursor+"-01", type:"due", label:"Rent due — "+fmtMonth(cursor), amount: rentRateForMonth(tenant, cursor)});
+      cursor = addMonths(cursor, 1);
+    }
+    for (const x of txns){
+      if (x.is_voided) continue;
+      if (x.type === "RENT_PAYMENT"){
+        const via = receiverNamesFor(x.id);
+        const viaLabel = via.length ? ` (via ${via.join(", ")})` : "";
+        events.push({date:x.date, type:"paid", label: (x.total_amount<0?"Refund / advance return":"Payment received") + viaLabel + (x.note?` — ${x.note}`:""), amount: x.total_amount});
+        if (x.repair_amount) events.push({date:x.date, type:"paid", label:"Repair deduction", amount: x.repair_amount});
+      } else if (x.type === "ADJUSTMENT"){
+        const amt = x.adjustment_amount||0;
+        const defaultLabel = amt>=0 ? "Balance adjustment (added)" : "Balance adjustment (reduced)";
+        events.push({date:x.date, type: amt>=0?"due":"paid", label: x.note || defaultLabel, amount: Math.abs(amt)});
+      }
+    }
+    events.sort((a,b)=> a.date.localeCompare(b.date));
+    let running = 0; const rows = [];
+    for (const e of events){
+      running += (e.type==="due" ? e.amount : -e.amount);
+      rows.push({...e, running});
+    }
+    return {tenant, rows, balance: tenant.current_balance||0};
+  },
+
+  // ---- Transactions ----
+  async recordRentPayment({tenant_id, total_amount, repair_amount, note, receipt, date, splits}){
+    total_amount = Number(total_amount)||0;
+    repair_amount = Number(repair_amount)||0;
+    splits = (splits||[]).map(s=>({...s, amount:Number(s.amount)||0})).filter(s=>s.receiver_id && s.amount);
+    const splitSum = splits.reduce((s,x)=>s+x.amount,0);
+    if (splits.length && Math.round((splitSum-total_amount)*100)!==0){
+      throw new Error(`Splits (${fmtMoney(splitSum)}) must add up to the amount received (${fmtMoney(total_amount)}).`);
+    }
+    const tenant = await get("tenants", tenant_id); if(!tenant) throw new Error("Tenant not found");
+    const txn = {
+      id:uid(), type:"RENT_PAYMENT", tenant_id, property_id: tenant.property_id,
+      total_amount, repair_amount, is_voided:false, date: date||todayISO(),
+      note: note||"", receipt: receipt||null
+    };
+    await put("transactions", txn);
+    for (const s of splits){
+      await put("transaction_splits", {id:uid(), transaction_id:txn.id, receiver_id:s.receiver_id, amount:s.amount, settled_at:null});
+    }
+    tenant.current_balance = (tenant.current_balance||0) - (total_amount + repair_amount);
+    await put("tenants", tenant);
+    return txn;
+  },
+  // A manual, logged correction to a tenant's balance — e.g. folding in a pending
+  // due amount carried over from a paper ledger before this app tracked them.
+  // Positive amount = adds to what they owe; negative = reduces it (a credit).
+  // Shows up in the tenant's ledger and can be voided like any other transaction,
+  // so it never causes the ledger and the tenant's balance to drift apart.
+  async recordBalanceAdjustment({tenant_id, amount, note, date}){
+    amount = Number(amount)||0;
+    if (!amount) throw new Error("Enter a non-zero amount");
+    const tenant = await get("tenants", tenant_id); if(!tenant) throw new Error("Tenant not found");
+    const txn = {
+      id:uid(), type:"ADJUSTMENT", tenant_id, property_id: tenant.property_id,
+      total_amount:0, repair_amount:0, adjustment_amount:amount, is_voided:false,
+      date: date||todayISO(), note: note||""
+    };
+    await put("transactions", txn);
+    tenant.current_balance = (tenant.current_balance||0) + amount;
+    await put("tenants", tenant);
+    return txn;
+  },
+  // Correct a mistake in an existing rent payment in place, rather than making
+  // the person void it and re-enter it from scratch. Reverses the transaction's
+  // old effect on the tenant's balance and applies the corrected one, replaces
+  // its splits, and writes an EDIT audit-log entry alongside the transaction's
+  // own record so the change is traceable like everything else.
+  async editRentPayment(id, {total_amount, repair_amount, note, receipt, date, splits}){
+    const txn = await get("transactions", id); if(!txn) throw new Error("Transaction not found");
+    if (txn.type !== "RENT_PAYMENT") throw new Error("Only rent payments can be edited here");
+    if (txn.is_voided) throw new Error("This transaction has been voided and can't be edited");
+    const existingSplits = await this.splitsFor(id);
+    if (existingSplits.some(s=>s.settled_at)) throw new Error("This payment's cash has already been settled with a partner, so it can't be edited. Void it instead if it was a mistake.");
+
+    total_amount = Number(total_amount)||0;
+    repair_amount = Number(repair_amount)||0;
+    splits = (splits||[]).map(s=>({...s, amount:Number(s.amount)||0})).filter(s=>s.receiver_id && s.amount);
+    const splitSum = splits.reduce((s,x)=>s+x.amount,0);
+    if (splits.length && Math.round((splitSum-total_amount)*100)!==0){
+      throw new Error(`Splits (${fmtMoney(splitSum)}) must add up to the amount received (${fmtMoney(total_amount)}).`);
+    }
+    const tenant = await get("tenants", txn.tenant_id); if(!tenant) throw new Error("Tenant not found");
+    const oldData = JSON.stringify(txn);
+
+    tenant.current_balance = (tenant.current_balance||0) + (txn.total_amount + txn.repair_amount) - (total_amount + repair_amount);
+    await put("tenants", tenant);
+
+    for (const s of existingSplits) await del("transaction_splits", s.id);
+    for (const s of splits) await put("transaction_splits", {id:uid(), transaction_id:id, receiver_id:s.receiver_id, amount:s.amount, settled_at:null});
+
+    txn.total_amount = total_amount;
+    txn.repair_amount = repair_amount;
+    txn.note = note||"";
+    txn.receipt = (receipt!==undefined) ? receipt : (txn.receipt||null);
+    txn.date = date || txn.date;
+    await put("transactions", txn);
+    await put("audit_log", {id:uid(), transaction_id:id, action:"EDIT", old_data:oldData, new_data:JSON.stringify(txn), timestamp:new Date().toISOString()});
+    return txn;
+  },
+  // Same idea as editRentPayment, for a balance adjustment entry.
+  async editBalanceAdjustment(id, {amount, note, date}){
+    const txn = await get("transactions", id); if(!txn) throw new Error("Transaction not found");
+    if (txn.type !== "ADJUSTMENT") throw new Error("Only balance adjustments can be edited here");
+    if (txn.is_voided) throw new Error("This has been voided and can't be edited");
+    amount = Number(amount)||0;
+    if (!amount) throw new Error("Enter a non-zero amount");
+    const tenant = await get("tenants", txn.tenant_id); if(!tenant) throw new Error("Tenant not found");
+    const oldData = JSON.stringify(txn);
+    tenant.current_balance = (tenant.current_balance||0) - (txn.adjustment_amount||0) + amount;
+    await put("tenants", tenant);
+    txn.adjustment_amount = amount;
+    txn.note = note||"";
+    txn.date = date || txn.date;
+    await put("transactions", txn);
+    await put("audit_log", {id:uid(), transaction_id:id, action:"EDIT", old_data:oldData, new_data:JSON.stringify(txn), timestamp:new Date().toISOString()});
+    return txn;
+  },
+  async voidTransaction(id){
+    const txn = await get("transactions", id); if(!txn) throw new Error("Transaction not found");
+    if (txn.is_voided) return txn;
+    const oldData = JSON.stringify(txn);
+    const tenant = await get("tenants", txn.tenant_id);
+    if (tenant){
+      if (txn.type === "ADJUSTMENT") tenant.current_balance = (tenant.current_balance||0) - (txn.adjustment_amount||0);
+      else tenant.current_balance = (tenant.current_balance||0) + (txn.total_amount + txn.repair_amount);
+      await put("tenants", tenant);
+    }
+    txn.is_voided = true;
+    await put("transactions", txn);
+    await put("audit_log", {id:uid(), transaction_id:id, action:"VOID", old_data:oldData, new_data:JSON.stringify(txn), timestamp:new Date().toISOString()});
+    return txn;
+  },
+  async auditLogFor(transactionId){ return (await getAll("audit_log")).filter(a=>a.transaction_id===transactionId).sort((a,b)=>b.timestamp.localeCompare(a.timestamp)); },
+  async splitsFor(transactionId){ return (await getAll("transaction_splits")).filter(s=>s.transaction_id===transactionId); },
+
+  // ---- Settlement ----
+  // Settlement reconciles the fact that different partners already hold different
+  // amounts of physical cash (via whichever receivers report into them), against
+  // what each partner is entitled to (their share % of the period's pool, plus
+  // whatever was left owing from before). The imbalance becomes a small set of
+  // suggested partner-to-partner transfers rather than a single shared payout.
+  async computeSettlement(period){
+    const [receivers, splits, txns, properties, partners] = await Promise.all([
+      this.allReceivers(), getAll("transaction_splits"), getAll("transactions"), this.allProperties(), this.allPartners()
+    ]);
+    const txnById = Object.fromEntries(txns.map(t=>[t.id,t]));
+    const receiverById = Object.fromEntries(receivers.map(r=>[r.id,r]));
+    const relevantSplits = splits.filter(s=>{
+      if (s.settled_at) return false;
+      const t = txnById[s.transaction_id];
+      if (!t || t.is_voided) return false;
+      return monthKey(t.date) === period;
+    });
+    const grossCollected = relevantSplits.reduce((s,x)=>s+x.amount, 0);
+    const ownerRentTotal = properties.reduce((s,p)=>s+(Number(p.owner_rent_amount)||0), 0);
+    const finalTotal = grossCollected - ownerRentTotal;
+
+    const byPartner = {};
+    for (const p of partners) byPartner[p.id] = {collected:0, splitIds:[]};
+    let unassigned = 0;
+    for (const s of relevantSplits){
+      const r = receiverById[s.receiver_id];
+      if (r && r.partner_id && byPartner[r.partner_id]){ byPartner[r.partner_id].collected += s.amount; byPartner[r.partner_id].splitIds.push(s.id); }
+      else unassigned += s.amount;
+    }
+
+    const rows = partners.map(p=>{
+      const share = finalTotal * ((Number(p.share_percent)||0)/100);
+      const opening = Number(p.running_balance)||0;
+      const collected = byPartner[p.id].collected;
+      const entitled = share + opening;
+      // net > 0: this partner holds less cash than they're entitled to — owed to them.
+      // net < 0: this partner is holding more than their share — they owe the excess out.
+      const net = entitled - collected;
+      return { partner_id:p.id, name:p.name, share_percent:p.share_percent, collected, share, opening_balance:opening, entitled, net, split_ids: byPartner[p.id].splitIds };
+    });
+
+    // Greedy debt-netting: match the biggest "owes" against the biggest "owed"
+    // until everyone's net is settled, minimizing the number of transfers needed.
+    const debtors = rows.filter(r=>r.net < -0.004).map(r=>({partner_id:r.partner_id, name:r.name, amount:-r.net})).sort((a,b)=>b.amount-a.amount);
+    const creditors = rows.filter(r=>r.net > 0.004).map(r=>({partner_id:r.partner_id, name:r.name, amount:r.net})).sort((a,b)=>b.amount-a.amount);
+    const transfers = [];
+    let i=0, j=0;
+    while (i<debtors.length && j<creditors.length){
+      const amt = Math.min(debtors[i].amount, creditors[j].amount);
+      if (amt > 0.004) transfers.push({from_partner_id:debtors[i].partner_id, from_name:debtors[i].name, to_partner_id:creditors[j].partner_id, to_name:creditors[j].name, amount:amt});
+      debtors[i].amount -= amt; creditors[j].amount -= amt;
+      if (debtors[i].amount <= 0.004) i++;
+      if (creditors[j].amount <= 0.004) j++;
+    }
+
+    return { period, grossCollected, ownerRentTotal, finalTotal, unassigned, rows, transfers };
+  },
+  // transferAmounts: {transferIndex: amountActuallyMoved} — lets the person record a
+  // partial transfer; whatever's left of each partner's net carries forward as their
+  // new running_balance, same "shortfall carries to next period" rule as before.
+  async recordSettlement(period, computed, transferAmounts){
+    const movement = {}; // partner_id -> net cash movement this round (received minus paid)
+    computed.transfers.forEach((t, idx) => {
+      const amt = Number(transferAmounts[idx]) || 0;
+      movement[t.from_partner_id] = (movement[t.from_partner_id]||0) - amt;
+      movement[t.to_partner_id] = (movement[t.to_partner_id]||0) + amt;
+    });
+    for (const row of computed.rows){
+      const closing = row.net - (movement[row.partner_id] || 0);
+      await put("partner_settlements", {
+        id:uid(), partner_id: row.partner_id, period, share_amount: row.share,
+        opening_balance: row.opening_balance, collected: row.collected, net: row.net,
+        closing_balance: closing, date: todayISO()
+      });
+      const partner = await get("partners", row.partner_id);
+      if (partner){ partner.running_balance = closing; await put("partners", partner); }
+      for (const sid of row.split_ids){
+        const split = await get("transaction_splits", sid);
+        if (split){ split.settled_at = todayISO(); await put("transaction_splits", split); }
+      }
+    }
+  },
+  async settlementHistory(){ return (await getAll("partner_settlements")).sort((a,b)=>b.date.localeCompare(a.date)); },
+
+  // ---- Reporting ----
+  async defaulterTenants(){ return (await getAll("tenants")).filter(t=>(t.current_balance||0) > 0); },
+  async defaulterTenantsWithProperty(propertyId){
+    const props = Object.fromEntries((await this.allProperties()).map(p=>[p.id,p]));
+    let list = await this.defaulterTenants();
+    if (propertyId) list = list.filter(t=>t.property_id===propertyId);
+    return list.map(t=>({...t, property: props[t.property_id]})).sort((a,b)=>(b.current_balance||0)-(a.current_balance||0));
+  },
+  async cashInHandByReceiver(){
+    const [receivers, splits, txns, partners, properties] = await Promise.all([
+      this.allReceivers(), getAll("transaction_splits"), getAll("transactions"), this.allPartners(), this.allProperties()
+    ]);
+    const txnById = Object.fromEntries(txns.map(t=>[t.id,t]));
+    const partnerById = Object.fromEntries(partners.map(p=>[p.id,p]));
+    const propertyById = Object.fromEntries(properties.map(p=>[p.id,p]));
+    return receivers.map(r=>{
+      const relevant = splits.filter(s=>s.receiver_id===r.id && !s.settled_at && txnById[s.transaction_id] && !txnById[s.transaction_id].is_voided);
+      const amount = relevant.reduce((s,x)=>s+x.amount,0);
+      const byPropertyMap = {};
+      for (const s of relevant){
+        const txn = txnById[s.transaction_id];
+        const prop = propertyById[txn.property_id];
+        const key = txn.property_id || "unknown";
+        if (!byPropertyMap[key]) byPropertyMap[key] = {property: prop, amount: 0};
+        byPropertyMap[key].amount += s.amount;
+      }
+      const byProperty = Object.values(byPropertyMap).sort((a,b)=>b.amount-a.amount);
+      return { receiver:r, partner: partnerById[r.partner_id]||null, amount, byProperty };
+    }).sort((a,b)=>b.amount-a.amount);
+  },
+  // Rolls receiver-level cash up to the partner pool it reports into — this is
+  // "how much is each partner actually holding right now", across everyone who
+  // collects on their behalf.
+  async cashInHandByPartner(){
+    const [byReceiver, partners] = await Promise.all([this.cashInHandByReceiver(), this.allPartners()]);
+    const byPartner = {}; for (const p of partners) byPartner[p.id] = {partner:p, amount:0, receivers:[]};
+    let unassigned = 0;
+    for (const r of byReceiver){
+      if (r.amount <= 0.004) continue;
+      if (r.partner && byPartner[r.partner.id]){ byPartner[r.partner.id].amount += r.amount; byPartner[r.partner.id].receivers.push(r); }
+      else unassigned += r.amount;
+    }
+    return { rows: Object.values(byPartner).sort((a,b)=>b.amount-a.amount), unassigned };
+  },
+  async totalArrears(){ return (await this.defaulterTenants()).reduce((s,t)=>s+(t.current_balance||0), 0); },
+  async totalCollectedThisMonth(){
+    return this.totalCollectedForMonth(monthKey());
+  },
+  // Parameterized version of the above, for a specific month (used by the snapshot).
+  async totalCollectedForMonth(mk){
+    const txns = await getAll("transactions");
+    return txns.filter(x=>!x.is_voided && x.type==="RENT_PAYMENT" && monthKey(x.date)===mk).reduce((s,x)=>s+x.total_amount, 0);
+  },
+  // A tenant's true FIFO balance as of the end of a given month — recomputed from
+  // their full transaction history filtered to that cutoff, not today's stored
+  // current_balance, so a snapshot of a past month reports what was actually
+  // owed at that point in time rather than today's figure.
+  async tenantBalanceAsOf(tenantId, mk){
+    const tenant = await get("tenants", tenantId); if(!tenant) return 0;
+    const startMk = monthKey(tenant.start_date);
+    if (mk < startMk) return 0;
+    const accrualEnd = (tenant.last_accrual_month && tenant.last_accrual_month < mk) ? tenant.last_accrual_month : mk;
+    let cumDue = 0;
+    let cursor = startMk;
+    while (cursor <= accrualEnd){ cumDue += rentRateForMonth(tenant, cursor); cursor = addMonths(cursor, 1); }
+    const cutoffDate = mk + "-31";
+    const txns = (await getAll("transactions")).filter(x=>x.tenant_id===tenantId && !x.is_voided && x.date <= cutoffDate);
+    let cumPaid = 0;
+    for (const x of txns){
+      if (x.type === "RENT_PAYMENT") cumPaid += (x.total_amount + x.repair_amount);
+      else if (x.type === "ADJUSTMENT") cumDue += (x.adjustment_amount||0);
+    }
+    return cumDue - cumPaid;
+  },
+  // Total arrears as of the end of a given month (for a historical snapshot),
+  // rather than today's totalArrears().
+  async arrearsAsOf(mk){
+    const tenants = await getAll("tenants");
+    let total = 0;
+    for (const t of tenants){
+      const bal = await this.tenantBalanceAsOf(t.id, mk);
+      if (bal > 0) total += bal;
+    }
+    return total;
+  },
+  // A single tenant's collection status for one specific month: did payments
+  // *dated in that month* cover at least a full month's rent? This answers
+  // "did we collect from them this month" — simpler and more scannable than a
+  // strict oldest-debt-first allocation, which is what Defaulters/the ledger
+  // already show. An advance payment counts toward the month it's recorded in.
+  monthlyTenantStatusFromTxns(tenant, mk, txnsForTenant){
+    const startMk = monthKey(tenant.start_date);
+    if (mk < startMk) return null; // wasn't a tenant yet
+    const due = rentRateForMonth(tenant, mk);
+    const paid = txnsForTenant
+      .filter(x => !x.is_voided && x.type === "RENT_PAYMENT" && monthKey(x.date) === mk)
+      .reduce((s,x) => s + x.total_amount + x.repair_amount, 0);
+    let status;
+    if (due <= 0) status = "paid";
+    else if (paid >= due - 0.005) status = "paid";
+    else if (paid > 0.005) status = "partial";
+    else status = "due";
+    return { status, paid, due };
+  },
+  // Monthly status for every tenant across the whole portfolio (or one property),
+  // used by both the per-property monthly view and the dashboard snapshot.
+  async monthlyStatusForAllTenants(mk, propertyId){
+    const [tenants, properties, txns] = await Promise.all([getAll("tenants"), this.allProperties(), getAll("transactions")]);
+    const pById = Object.fromEntries(properties.map(p=>[p.id,p]));
+    const txnsByTenant = {};
+    for (const x of txns){ (txnsByTenant[x.tenant_id] ||= []).push(x); }
+    const list = propertyId ? tenants.filter(t=>t.property_id===propertyId) : tenants;
+    return list
+      .map(t => {
+        const r = this.monthlyTenantStatusFromTxns(t, mk, txnsByTenant[t.id] || []);
+        return r ? { tenant:t, property: pById[t.property_id], ...r } : null;
+      })
+      .filter(Boolean)
+      .sort((a,b)=>a.tenant.name.localeCompare(b.tenant.name));
+  },
+  // Per-property rollup for a given month: counts + cash collected, for the
+  // dashboard snapshot's "by property" section.
+  async monthlyPropertyBreakdown(mk){
+    const [properties, statuses] = await Promise.all([this.allProperties(), this.monthlyStatusForAllTenants(mk)]);
+    return properties.map(p => {
+      const rows = statuses.filter(s=>s.property && s.property.id===p.id);
+      return {
+        property: p,
+        total: rows.length,
+        paid: rows.filter(r=>r.status==="paid").length,
+        partial: rows.filter(r=>r.status==="partial").length,
+        due: rows.filter(r=>r.status==="due").length,
+        collected: rows.reduce((s,r)=>s+r.paid,0)
+      };
+    }).filter(r=>r.total>0);
+  },
+  async recentTransactions(limit=8){
+    const [txns, tenants, properties, splits, receivers] = await Promise.all([
+      getAll("transactions"), getAll("tenants"), this.allProperties(), getAll("transaction_splits"), this.allReceivers()
+    ]);
+    const tById = Object.fromEntries(tenants.map(t=>[t.id,t]));
+    const pById = Object.fromEntries(properties.map(p=>[p.id,p]));
+    const receiverById = Object.fromEntries(receivers.map(r=>[r.id,r]));
+    return txns.sort((a,b)=>b.date.localeCompare(a.date) || (b.id>a.id?1:-1)).slice(0,limit)
+      .map(x=>({
+        ...x, tenant:tById[x.tenant_id], property:pById[x.property_id],
+        receivedByNames: splits.filter(s=>s.transaction_id===x.id).map(s=>receiverById[s.receiver_id]?.name).filter(Boolean)
+      }));
+  },
+  async allTenantsWithProperty(){
+    const [tenants, properties] = await Promise.all([getAll("tenants"), this.allProperties()]);
+    const pById = Object.fromEntries(properties.map(p=>[p.id,p]));
+    return tenants.map(t=>({...t, property:pById[t.property_id]})).sort((a,b)=>a.name.localeCompare(b.name));
+  },
+  // Portfolio-wide counts for the dashboard stat grid.
+  async portfolioTotals(){
+    const [properties, tenants] = await Promise.all([this.allProperties(), getAll("tenants")]);
+    return { properties: properties.length, tenants: tenants.length };
+  },
+  // Monthly collections trend for the dashboard bar chart.
+  async monthlyCollections(n=6){
+    const now = monthKey();
+    const months = []; for (let i=n-1;i>=0;i--) months.push(addMonths(now,-i));
+    const txns = await getAll("transactions");
+    return months.map(mk => ({
+      label: fmtMonthShort(mk),
+      value: txns.filter(x=>!x.is_voided && x.type==="RENT_PAYMENT" && monthKey(x.date)===mk).reduce((s,x)=>s+x.total_amount,0)
+    }));
+  },
+  // Arrears grouped by property for the dashboard donut chart.
+  async arrearsByProperty(){
+    const [tenants, properties] = await Promise.all([getAll("tenants"), this.allProperties()]);
+    const byProp = {}; for (const p of properties) byProp[p.id] = {label:p.name, value:0};
+    for (const t of tenants){ if ((t.current_balance||0)>0 && byProp[t.property_id]) byProp[t.property_id].value += t.current_balance; }
+    return Object.values(byProp).filter(x=>x.value>0.009).sort((a,b)=>b.value-a.value);
+  },
+
+  // ---- Data safety ----
+  async exportDatabaseCopy(){
+    const dump = {};
+    for (const s of STORES) dump[s] = await getAll(s);
+    dump._exported_at = new Date().toISOString();
+    dump._version = DB_VERSION;
+    const blob = new Blob([JSON.stringify(dump, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `mytenants-backup-${todayISO()}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  },
+  async importDatabaseCopy(json){
+    const data = JSON.parse(json);
+    for (const s of STORES){
+      if (!Array.isArray(data[s])) continue;
+      await tx(s, "readwrite", store => { store.clear(); data[s].forEach(row => store.put(row)); });
+    }
+  }
+};
+
+// =====================================================================
+// UI LAYER
+// =====================================================================
+const State = { tab:"dashboard", propertyId:null, tenantId:null, modal:null };
+
+function render(){ Screens[State.tab] ? Screens[State.tab]() : renderDashboard(); }
+
+function Shell(title, sub, innerHtml, opts={}){
+  const app = document.getElementById("app");
+  const titleBlock = opts.logoImg
+    ? `<img src="${opts.logoImg}" alt="${esc(title)}" style="height:60px;width:auto;display:block;border-radius:13px;">${sub?`<div class="sub" style="margin-top:6px;">${esc(sub)}</div>`:""}`
+    : `<h1>${esc(title)}</h1>${sub?`<div class="sub">${esc(sub)}</div>`:""}`;
+  app.innerHTML = `
+    <div class="topbar">
+      <div>${titleBlock}</div>
+      ${opts.headerRight||""}
+    </div>
+    <div class="content">${innerHtml}</div>
+    ${opts.fab||""}
+    ${Tabs()}
+  `;
+}
+function Tabs(){
+  const items = [
+    {id:"dashboard", ic:"dashboard", label:"Dashboard"},
+    {id:"properties", ic:"apartment", label:"Properties"},
+    {id:"defaulters", ic:"warning", label:"Defaulters"},
+    {id:"cash", ic:"payments", label:"Cash"},
+    {id:"partners", ic:"groups", label:"Partners"},
+  ];
+  return `<div class="tabs">${items.map(i=>`
+    <button class="tab ${State.tab===i.id?"active":""}" onclick="goTab('${i.id}')">
+      <span class="ic-wrap">${ic(i.ic)}</span><span>${i.label}</span>
+    </button>`).join("")}</div>`;
+}
+function fabWrap(label, iconName, onclick){
+  return `<div class="fab-wrap"><button class="fab-btn" onclick="${onclick}">${ic(iconName)}<span>${esc(label)}</span></button></div>`;
+}
+function goTab(id){ State.tab=id; State.propertyId=null; State.tenantId=null; render(); }
+
+function statusChip(balance){
+  if (balance > 0.001) return `<span class="chip due">${ic("schedule")}Due ${fmtMoney(balance)}</span>`;
+  if (balance < -0.001) return `<span class="chip partial">${ic("arrow_upward")}Advance ${fmtMoney(-balance)}</span>`;
+  return `<span class="chip paid">${ic("check_circle")}Paid</span>`;
+}
+
+// ---------- Dashboard ----------
+const Screens = {};
+Screens.dashboard = async function(){
+  const [arrears, collected, recent, portfolio, trend, arrearsByProp, cashRows] = await Promise.all([
+    Repo.totalArrears(), Repo.totalCollectedThisMonth(), Repo.recentTransactions(6),
+    Repo.portfolioTotals(), Repo.monthlyCollections(6), Repo.arrearsByProperty(), Repo.cashInHandByReceiver()
+  ]);
+  const cashTotal = cashRows.reduce((s,r)=>s+r.amount,0);
+  const html = `
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="top-row"><div class="ic-badge">${ic("account_balance_wallet")}</div></div>
+        <div class="label">Total arrears</div><div class="value num">${fmtMoney(arrears)}</div>
+      </div>
+      <div class="stat">
+        <div class="top-row"><div class="ic-badge">${ic("payments")}</div></div>
+        <div class="label">Collected this month</div><div class="value num">${fmtMoney(collected)}</div>
+      </div>
+      <div class="stat">
+        <div class="top-row"><div class="ic-badge">${ic("savings")}</div></div>
+        <div class="label">Cash in hand (unsettled)</div><div class="value num">${fmtMoney(cashTotal)}</div>
+      </div>
+      <div class="stat">
+        <div class="top-row"><div class="ic-badge">${ic("apartment")}</div></div>
+        <div class="label">Portfolio</div><div class="value">${portfolio.tenants} tenants · ${portfolio.properties} props</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Collections trend</div>
+      <div class="chart-sub">Last 6 months, rent payments only</div>
+      ${trend.some(t=>t.value>0) ? svgBarChart(trend, {height:150}) : `<div class="chart-empty">No payments recorded yet</div>`}
+    </div>
+
+    ${arrearsByProp.length ? `
+    <div class="chart-card">
+      <div class="chart-title">Arrears by property</div>
+      <div class="chart-sub">Where outstanding rent is concentrated</div>
+      <div class="chart-flex">
+        ${svgDonut(arrearsByProp, {centerLabel:fmtMoney(arrears).replace("₹","₹\n")})}
+        ${chartLegend(arrearsByProp)}
+      </div>
+    </div>` : ""}
+
+    <div class="section-title">${ic("history")}Recent activity</div>
+    ${recent.length ? recent.map(x=>{
+      const isAdj = x.type === "ADJUSTMENT";
+      const amt = isAdj ? (x.adjustment_amount||0) : x.total_amount;
+      return `
+      <div class="card tap" onclick="openTxnDetail('${x.id}')">
+        <div class="row">
+          <div>
+            <div class="name">${esc(x.tenant?x.tenant.name:"—")}${x.is_voided?' <span class="chip due">Voided</span>':""}</div>
+            <div class="meta">${isAdj?"Balance adjustment · ":""}${esc(x.property?x.property.name:"")} · ${fmtDate(x.date)}${x.receivedByNames&&x.receivedByNames.length?` · via ${esc(x.receivedByNames.join(", "))}`:""}</div>
+          </div>
+          <div class="num" style="font-weight:700;color:${isAdj && amt<0 ? 'var(--paid)' : 'inherit'};">${amt<0&&isAdj?"−":""}${fmtMoney(Math.abs(amt))}</div>
+        </div>
+      </div>`;
+    }).join("") : `<div class="empty">${ic("receipt_long")}<div class="big">No payments recorded yet</div>Tap "Add payment" to log the first one.</div>`}
+  `;
+  Shell("myTenants", "Dashboard", html, {
+    logoImg: "icons/header-logo.png",
+    fab: fabWrap("Add payment", "add", "openAddPayment()"),
+    headerRight: `<button class="icon-btn" onclick="openSnapshotModal()" title="Monthly snapshot">${ic("photo_camera")}</button>`
+  });
+};
+
+// ---------- Properties ----------
+Screens.properties = async function(){
+  const properties = await Repo.allProperties();
+  const withCounts = await Promise.all(properties.map(async p => ({...p, count: await Repo.tenantCountForProperty(p.id)})));
+  const html = withCounts.length ? withCounts.map(p=>`
+    <div class="card tap" onclick="openPropertyTenants('${p.id}')">
+      <div class="row">
+        <div>
+          <div class="name">${esc(p.name)}</div>
+          <div class="meta">${esc(p.type||"Property")} · owner ${esc(p.owner_name||"—")} · owner rent ${fmtMoney(p.owner_rent_amount)}/mo</div>
+        </div>
+        <span class="chip neutral">${p.count} tenant${p.count===1?"":"s"}</span>
+      </div>
+    </div>`).join("") : `<div class="empty">${ic("apartment")}<div class="big">No properties yet</div>Add the first property you lease from a landowner.</div>`;
+  Shell("Properties", `${properties.length} total`, html, { fab: fabWrap("Add property", "add", "openModal('addProperty')") });
+};
+
+function tenantCard(t){
+  return `
+    <div class="card tap" onclick="openTenantLedger('${t.id}')" style="${t.archived?"opacity:.62;":""}">
+      <div class="row">
+        <div><div class="name">${esc(t.name)}</div><div class="meta">Rent ${fmtMoney(t.monthly_rent)}/mo</div></div>
+        ${t.archived ? `<span class="chip neutral">${ic("inventory_2")}Moved out</span>` : statusChip(t.current_balance||0)}
+      </div>
+    </div>`;
+}
+function monthlyStatusChip(status){
+  if (status==="paid") return `<span class="chip paid">${ic("check_circle")}Paid</span>`;
+  if (status==="partial") return `<span class="chip partial">${ic("hourglass_top")}Partial</span>`;
+  return `<span class="chip due">${ic("schedule")}Due</span>`;
+}
+function monthlyTenantCard(row){
+  const t = row.tenant;
+  return `
+    <div class="card tap" onclick="openTenantLedger('${t.id}')">
+      <div class="row">
+        <div>
+          <div class="name">${esc(t.name)}${t.archived?' <span class="meta">(moved out)</span>':""}</div>
+          <div class="meta">${fmtMoney(row.paid)} of ${fmtMoney(row.due)} this month</div>
+        </div>
+        ${monthlyStatusChip(row.status)}
+      </div>
+    </div>`;
+}
+function tenantsViewToggleHtml(){
+  const mode = State.tenantsViewMode || "overall";
+  const month = State.tenantsViewMonth || monthKey();
+  return `
+    <div class="segmented">
+      <button class="${mode==="overall"?"active":""}" onclick="setTenantsViewMode('overall')">Overall</button>
+      <button class="${mode==="monthly"?"active":""}" onclick="setTenantsViewMode('monthly')">This month</button>
+    </div>
+    ${mode==="monthly" ? `<input type="month" max="${monthKey()}" value="${month}" onchange="State.tenantsViewMonth=this.value; render();" style="margin-bottom:12px;">` : ""}
+  `;
+}
+function setTenantsViewMode(mode){ State.tenantsViewMode = mode; render(); }
+Screens.propertyTenants = async function(){
+  const property = await get("properties", State.propertyId);
+  const mode = State.tenantsViewMode || "overall";
+  const html = `
+    <button class="back-btn" onclick="goTab('properties')">${ic("arrow_back")}Properties</button>
+    <div class="card">
+      <div class="row"><div class="name">${esc(property.name)}</div><button class="link-btn" onclick="openModal('editProperty')">${ic("edit")}Edit</button></div>
+      <div class="meta">${esc(property.type||"Property")} · owner ${esc(property.owner_name||"—")} · owner rent ${fmtMoney(property.owner_rent_amount)}/mo</div>
+    </div>
+    <div class="section-title">${ic("groups")}Tenants</div>
+    ${tenantsViewToggleHtml()}
+    ${mode==="monthly" ? await renderMonthlyTenantsList(property.id, State.tenantsViewMonth || monthKey()) : await renderOverallTenantsList(property.id)}
+  `;
+  Shell("Tenants", property.name, html, { fab: fabWrap("Add tenant", "add", "openModal('addTenant')") });
+};
+async function renderOverallTenantsList(propertyId){
+  const tenants = await Repo.tenantsForProperty(propertyId);
+  const active = tenants.filter(t=>!t.archived);
+  const archived = tenants.filter(t=>t.archived);
+  if (!tenants.length) return `<div class="empty">${ic("person_add")}<div class="big">No tenants yet</div>Add the first tenant for this property.</div>`;
+  return `
+    ${active.map(tenantCard).join("")}
+    ${archived.length ? `<div class="section-title">${ic("inventory_2")}Moved out</div>${archived.map(tenantCard).join("")}` : ""}
+  `;
+}
+async function renderMonthlyTenantsList(propertyId, mk){
+  const rows = await Repo.monthlyStatusForAllTenants(mk, propertyId);
+  if (!rows.length) return `<div class="empty">${ic("event_busy")}<div class="big">No tenants yet for ${esc(fmtMonth(mk))}</div>Nobody had moved in by this month.</div>`;
+  const paid = rows.filter(r=>r.status==="paid").length;
+  const partial = rows.filter(r=>r.status==="partial").length;
+  const due = rows.filter(r=>r.status==="due").length;
+  return `
+    <div class="month-summary"><span><b>${paid}</b> paid</span><span><b>${partial}</b> partial</span><span><b>${due}</b> due</span></div>
+    ${rows.map(monthlyTenantCard).join("")}
+  `;
+}
+
+Screens.tenantLedger = async function(){
+  const {tenant, rows, balance} = await Repo.tenantLedgerRows(State.tenantId);
+  const property = await get("properties", tenant.property_id);
+  const html = `
+    <button class="back-btn" onclick="openPropertyTenants('${tenant.property_id}')">${ic("arrow_back")}${esc(property?property.name:"Property")}</button>
+    <div class="card">
+      <div class="row"><div class="name">${esc(tenant.name)}</div>${statusChip(balance)}</div>
+      <div class="meta">Rent ${fmtMoney(tenant.monthly_rent)}/mo · tenant since ${fmtDate(tenant.start_date)}</div>
+    </div>
+    <div class="section-title">${ic("receipt_long")}Ledger</div>
+    <div class="card">
+      ${rows.length ? rows.map(r=>`
+        <div class="ledger-row">
+          <div><div>${esc(r.label)}</div><div class="l1">${fmtDate(r.date)}</div></div>
+          <div style="text-align:right;">
+            <div class="num" style="color:${r.type==='due'?'var(--due)':'var(--paid)'};font-weight:600;">${r.type==='due'?'+':'−'}${fmtMoney(Math.abs(r.amount))}</div>
+            <div class="l1 num">bal ${fmtMoney(r.running)}</div>
+          </div>
+        </div>`).join("") : `<div class="empty">No ledger activity yet.</div>`}
+    </div>
+    <button class="btn secondary" style="margin-top:6px;">
+      <span onclick="openModal('editTenant')" style="display:flex;align-items:center;gap:8px;">${ic("edit")}Edit tenant</span>
+    </button>
+    <button class="btn ghost" style="margin-top:8px;" onclick="openModal('adjustBalance')">${ic("tune")}Adjust balance / add pending due</button>
+  `;
+  Shell("Tenant ledger", tenant.name, html);
+};
+
+// ---------- Defaulters ----------
+Screens.defaulters = async function(){
+  const properties = await Repo.allProperties();
+  const filter = State.defaulterFilter || "";
+  const list = await Repo.defaulterTenantsWithProperty(filter || null);
+  const chartData = list.slice(0,6).map(t=>({label:t.name, value:t.current_balance}));
+  const html = `
+    <select onchange="State.defaulterFilter=this.value; render();" style="margin-bottom:14px;">
+      <option value="">All properties</option>
+      ${properties.map(p=>`<option value="${p.id}" ${filter===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}
+    </select>
+    ${list.length ? `<div class="chart-card">
+      <div class="chart-title">Top outstanding balances</div>
+      ${svgBarChart(chartData, {height:150, color:"#BA1A1A"})}
+    </div>` : ""}
+    ${list.length ? list.map(t=>`
+      <div class="card tap" onclick="openTenantLedger('${t.id}')">
+        <div class="row">
+          <div><div class="name">${esc(t.name)}</div><div class="meta">${esc(t.property?t.property.name:"")}</div></div>
+          <span class="chip due num">${fmtMoney(t.current_balance)}</span>
+        </div>
+        <button class="btn secondary small" style="margin-top:10px;width:100%;" onclick="event.stopPropagation(); openAddPayment('${t.id}')">${ic("payments")}Record payment</button>
+      </div>`).join("") : `<div class="empty">${ic("celebration")}<div class="big">No defaulters</div>Everyone's paid up.</div>`}
+  `;
+  Shell("Defaulter list", `${list.length} tenant${list.length===1?"":"s"} owing`, html);
+};
+
+// ---------- Cash in hand ----------
+Screens.cash = async function(){
+  const rows = await Repo.cashInHandByReceiver();
+  const byPartner = await Repo.cashInHandByPartner();
+  const total = rows.reduce((s,r)=>s+r.amount,0);
+  const chartData = rows.filter(r=>r.amount>0).map(r=>({label:r.receiver.name, value:r.amount}));
+  const html = `
+    <div class="stat" style="margin-bottom:14px;">
+      <div class="top-row"><div class="ic-badge">${ic("savings")}</div></div>
+      <div class="label">Total unsettled cash</div><div class="value num">${fmtMoney(total)}</div>
+    </div>
+    ${chartData.length ? `<div class="chart-card">
+      <div class="chart-title">Split by receiver</div>
+      <div class="chart-flex">${svgDonut(chartData, {centerLabel:fmtMoney(total).replace("₹","₹\n")})}${chartLegend(chartData, {showPct:true})}</div>
+    </div>` : ""}
+
+    <div class="section-title">${ic("groups")}By partner pool</div>
+    ${byPartner.rows.length ? byPartner.rows.map(r=>`
+      <div class="card">
+        <div class="row"><div class="name">${esc(r.partner.name)}</div><div class="num" style="font-weight:700;">${fmtMoney(r.amount)}</div></div>
+        ${r.receivers.length ? `<div class="meta" style="margin-top:4px;">${r.receivers.map(x=>`${esc(x.receiver.name)}: ${fmtMoney(x.amount)}`).join(" · ")}</div>` : `<div class="meta" style="margin-top:4px;">No unsettled cash right now</div>`}
+      </div>`).join("") : `<div class="empty">Add partners first (see the Partners tab).</div>`}
+    ${byPartner.unassigned > 0.004 ? `<div class="warn-box">${ic("warning")}${fmtMoney(byPartner.unassigned)} was collected by a receiver with no partner linked yet.</div>` : ""}
+
+    <div class="section-title">${ic("person_pin")}By receiver</div>
+    ${rows.length ? rows.map(r=>`
+      <div class="card">
+        <div class="row">
+          <div><div class="name">${esc(r.receiver.name)}</div><div class="meta">${r.partner?"→ "+esc(r.partner.name)+"'s pool":"No partner linked"}</div></div>
+          <div class="num" style="font-weight:700;">${fmtMoney(r.amount)}</div>
+        </div>
+        ${r.byProperty.length ? `<div class="meta" style="margin-top:6px;">${r.byProperty.map(x=>`${esc(x.property?x.property.name:"Unknown property")}: ${fmtMoney(x.amount)}`).join(" · ")}</div>` : ""}
+      </div>`).join("") : `<div class="empty">${ic("payments")}<div class="big">Nothing to show</div>Cash held per receiver appears here once payments are recorded.</div>`}
+    <button class="btn" style="margin-top:14px;" onclick="goTab('settlement')">${ic("balance")}Run settlement</button>
+  `;
+  Shell("Cash in hand", "Unsettled, by receiver and by partner", html);
+};
+
+// ---------- Settlement ----------
+Screens.settlement = async function(){
+  const period = State.settlementPeriod || monthKey();
+  const computed = await Repo.computeSettlement(period);
+  State._lastSettlement = computed;
+  const html = `
+    <button class="back-btn" onclick="goTab('cash')">${ic("arrow_back")}Cash in hand</button>
+    <label>Settlement period</label>
+    <input type="month" value="${period}" onchange="State.settlementPeriod=this.value; render();">
+    <div class="divider"></div>
+    <div class="row"><span class="meta">Collected (this period)</span><span class="num">${fmtMoney(computed.grossCollected)}</span></div>
+    <div class="row"><span class="meta">− Owner rent (all properties)</span><span class="num">${fmtMoney(computed.ownerRentTotal)}</span></div>
+    <div class="row"><span style="font-weight:700;">= Final total</span><span class="num" style="font-weight:700;">${fmtMoney(computed.finalTotal)}</span></div>
+    ${computed.unassigned > 0.004 ? `<div class="warn-box" style="margin-top:10px;">${ic("warning")}${fmtMoney(computed.unassigned)} was collected by a receiver with no partner linked, so it's left out of everyone's share below — link that receiver to a partner in Manage Partners.</div>` : ""}
+
+    <div class="section-title">${ic("groups")}Who's actually holding the cash</div>
+    ${computed.rows.length ? computed.rows.map(r=>`
+      <div class="card">
+        <div class="row"><div class="name">${esc(r.name)}</div><span class="chip neutral">${r.share_percent}% share</span></div>
+        <div class="row"><span class="meta">Collected via their receivers</span><span class="num">${fmtMoney(r.collected)}</span></div>
+        <div class="row"><span class="meta">Entitled to (share + opening balance)</span><span class="num">${fmtMoney(r.entitled)}</span></div>
+        <div class="row"><span style="font-weight:700;">${Math.abs(r.net)<0.005 ? "Already even" : r.net>0 ? "Owed to them" : "Holding extra — owes this out"}</span><span class="num" style="font-weight:700;color:${r.net>=0?'var(--paid)':'var(--due)'};">${fmtMoney(Math.abs(r.net))}</span></div>
+      </div>`).join("") : `<div class="empty">Add partners first (see the Partners tab).</div>`}
+
+    ${computed.transfers.length ? `
+      <div class="section-title">${ic("swap_horiz")}Suggested transfers to even it out</div>
+      ${computed.transfers.map((t,idx)=>`
+        <div class="card">
+          <div class="row"><span class="name">${esc(t.from_name)} ${ic("arrow_forward")} ${esc(t.to_name)}</span></div>
+          <label>Amount actually transferred</label>
+          <input type="number" step="0.01" id="transfer-${idx}" value="${t.amount.toFixed(2)}">
+        </div>`).join("")}
+    ` : (computed.rows.length ? `<div class="empty">${ic("celebration")}Everyone already holds their fair share — nothing to transfer.</div>` : "")}
+
+    ${computed.rows.length ? `<button class="btn" onclick="submitSettlement()">${ic("check")}Record settlement</button>` : ""}
+  `;
+  Shell("Settlement", fmtMonth(period), html);
+};
+async function submitSettlement(){
+  const computed = State._lastSettlement;
+  const transferAmounts = {};
+  computed.transfers.forEach((t, idx) => { transferAmounts[idx] = document.getElementById("transfer-"+idx).value; });
+  if (!confirm(`Record settlement for ${fmtMonth(computed.period)}? This marks the underlying cash as settled and updates each partner's carried balance.`)) return;
+  await Repo.recordSettlement(computed.period, computed, transferAmounts);
+  toast("Settlement recorded");
+  goTab("cash");
+}
+
+// ---------- Partners ----------
+Screens.partners = async function(){
+  const {ok, sum, partners} = await Repo.validateShares();
+  const receivers = await Repo.allReceivers();
+  const partnerById = Object.fromEntries(partners.map(p=>[p.id,p]));
+  const shareData = partners.filter(p=>p.share_percent>0).map(p=>({label:p.name, value:p.share_percent}));
+  const html = `
+    ${!ok && partners.length ? `<div class="warn-box">${ic("warning")}Shares add up to ${sum}% — they should total 100%.</div>` : ""}
+    ${shareData.length>1 ? `<div class="chart-card">
+      <div class="chart-title">Share of the pool</div>
+      <div class="chart-flex">${svgDonut(shareData)}${chartLegend(shareData, {showPct:true})}</div>
+    </div>` : ""}
+    <div class="section-title">${ic("groups")}Partners</div>
+    ${partners.length ? partners.map(p=>`
+      <div class="card">
+        <div class="row">
+          <div><div class="name">${esc(p.name)}</div><div class="meta">Running balance ${fmtMoney(p.running_balance)}</div></div>
+          <div class="chip neutral">${p.share_percent}%</div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <button class="link-btn" onclick="openModal('editPartner','${p.id}')">${ic("edit")}Edit</button>
+          <button class="link-btn danger-link" onclick="removePartner('${p.id}')">${ic("delete")}Remove</button>
+        </div>
+      </div>`).join("") : `<div class="empty">${ic("groups")}<div class="big">No partners yet</div>Add each profit-sharing partner and their share %.</div>`}
+    <button class="btn secondary" onclick="openModal('addPartner')">${ic("add")}Add partner</button>
+
+    <div class="section-title">${ic("person_pin")}Receivers</div>
+    <div class="meta" style="margin-bottom:10px;">People who physically collect cash and report it into a partner's pool.</div>
+    ${receivers.length ? receivers.map(r=>`
+      <div class="card">
+        <div class="row">
+          <div><div class="name">${esc(r.name)}</div><div class="meta">${r.partner_id && partnerById[r.partner_id] ? "→ "+esc(partnerById[r.partner_id].name)+"'s pool" : "No partner linked"}</div></div>
+          <button class="link-btn danger-link" onclick="removeReceiver('${r.id}')">${ic("delete")}</button>
+        </div>
+      </div>`).join("") : `<div class="empty">No receivers yet.</div>`}
+    <button class="btn secondary" onclick="openModal('addReceiver')">${ic("add")}Add receiver</button>
+
+    <div class="section-title">${ic("cloud_upload")}Backup & move to a new version</div>
+    <div class="meta" style="margin-bottom:10px;">Your data lives only in this browser. Export a backup regularly, and use it to bring everything over whenever you update this app's file, switch browsers, or move to a different device.</div>
+    <button class="btn ghost" onclick="Repo.exportDatabaseCopy()">${ic("download")}Export backup (.json)</button>
+    <div style="height:10px;"></div>
+    <label>Restore from backup</label>
+    <input type="file" accept="application/json" onchange="importBackup(event)">
+  `;
+  Shell("Manage partners", null, html);
+};
+async function removePartner(id){
+  try{ if(!confirm("Remove this partner?")) return; await Repo.removePartner(id); render(); }
+  catch(e){ toast(e.message); }
+}
+async function removeReceiver(id){
+  try{ if(!confirm("Remove this receiver?")) return; await Repo.removeReceiver(id); render(); }
+  catch(e){ toast(e.message); }
+}
+async function importBackup(ev){
+  const file = ev.target.files[0]; if(!file) return;
+  const text = await file.text();
+  let data;
+  try{ data = JSON.parse(text); }
+  catch(e){ toast("That doesn't look like a valid backup file"); ev.target.value=""; return; }
+  const exportedAt = data._exported_at ? fmtDate(data._exported_at) : "an unknown date";
+  const summary = [
+    `${(data.properties||[]).length} properties`,
+    `${(data.tenants||[]).length} tenants`,
+    `${(data.transactions||[]).length} transactions`,
+    `${(data.partners||[]).length} partners`
+  ].join(", ");
+  const proceed = confirm(`This backup was exported on ${exportedAt} and contains ${summary}.\n\nImporting will REPLACE everything currently in this browser with the backup's data. This can't be undone. Continue?`);
+  if (!proceed){ ev.target.value=""; return; }
+  try{ await Repo.importDatabaseCopy(text); toast("Backup restored"); goTab("dashboard"); }
+  catch(e){ toast("Could not read backup file"); }
+  ev.target.value="";
+}
+
+// ---------- navigation helpers ----------
+function openPropertyTenants(id){ State.tab="propertyTenants"; State.propertyId=id; render(); }
+function openTenantLedger(id){ State.tab="tenantLedger"; State.tenantId=id; render(); }
+
+// ---------- modal system (Material bottom sheet) ----------
+function openModal(name, payload){ State.modal = {name, payload}; renderModal(); }
+function closeModal(){ State.modal = null; document.getElementById("modal-root")?.remove(); }
+function renderModal(){
+  document.getElementById("modal-root")?.remove();
+  const root = document.createElement("div");
+  root.id = "modal-root";
+  document.body.appendChild(root);
+  Modals[State.modal.name](State.modal.payload, root);
+}
+const Modals = {};
+
+Modals.addProperty = (_, root) => {
+  root.innerHTML = modalShell("Add property", `
+    <label>Property name</label><input id="m-name" type="text" placeholder="e.g. Main Street shops">
+    <label>Type</label><input id="m-type" type="text" placeholder="e.g. Commercial block">
+    <label>Owner / landowner name</label><input id="m-owner" type="text">
+    <label>Owner rent (fixed, per month)</label><input id="m-rent" type="number" step="0.01">
+    <button class="btn" style="margin-top:16px;" onclick="saveProperty()">Save property</button>
+  `);
+};
+async function saveProperty(){
+  const name = document.getElementById("m-name").value.trim();
+  if (!name) return toast("Enter a property name");
+  await Repo.addProperty({name, type:document.getElementById("m-type").value.trim(), owner_name:document.getElementById("m-owner").value.trim(), owner_rent_amount:document.getElementById("m-rent").value});
+  closeModal(); render();
+}
+Modals.editProperty = async (_, root) => {
+  const p = await get("properties", State.propertyId);
+  root.innerHTML = modalShell("Edit property", `
+    <label>Property name</label><input id="m-name" type="text" value="${esc(p.name)}">
+    <label>Type</label><input id="m-type" type="text" value="${esc(p.type||"")}">
+    <label>Owner / landowner name</label><input id="m-owner" type="text" value="${esc(p.owner_name||"")}">
+    <label>Owner rent (fixed, per month)</label><input id="m-rent" type="number" step="0.01" value="${p.owner_rent_amount||0}">
+    <button class="btn" style="margin-top:16px;" onclick="updatePropertySave('${p.id}')">Save changes</button>
+    <button class="btn danger" style="margin-top:8px;" onclick="deletePropertyConfirm('${p.id}')">Delete property</button>
+  `);
+};
+async function updatePropertySave(id){
+  await Repo.updateProperty(id, {name:document.getElementById("m-name").value.trim(), type:document.getElementById("m-type").value.trim(), owner_name:document.getElementById("m-owner").value.trim(), owner_rent_amount:Number(document.getElementById("m-rent").value)||0});
+  closeModal(); render();
+}
+async function deletePropertyConfirm(id){
+  try{ if(!confirm("Delete this property?")) return; await Repo.deleteProperty(id); closeModal(); goTab("properties"); }
+  catch(e){ toast(e.message); }
+}
+
+Modals.addTenant = (_, root) => {
+  root.innerHTML = modalShell("Add tenant", `
+    <label>Tenant / shop name</label><input id="m-name" type="text">
+    <label>Monthly rent</label><input id="m-rent" type="number" step="0.01">
+    <button class="btn" style="margin-top:16px;" onclick="saveTenant()">Save tenant</button>
+  `);
+};
+async function saveTenant(){
+  const name = document.getElementById("m-name").value.trim();
+  if (!name) return toast("Enter a tenant name");
+  await Repo.addTenant({property_id: State.propertyId, name, monthly_rent: document.getElementById("m-rent").value});
+  closeModal(); render();
+}
+Modals.editTenant = async (_, root, errMsg) => {
+  const t = await get("tenants", State.tenantId);
+  const currentRate = rentRateForMonth(t, monthKey());
+  const history = (t.rent_history && t.rent_history.length) ? t.rent_history : [{effective_month: monthKey(t.start_date), rent: t.monthly_rent||0}];
+  const currentEntry = [...history].reverse().find(h => h.effective_month <= monthKey()) || history[0];
+  const upcoming = history.filter(h => h.effective_month > monthKey());
+  root.innerHTML = modalShell("Edit tenant", `
+    ${errMsg ? `<div class="warn-box">${ic("error")}${esc(errMsg)}</div>` : ""}
+    <label>Tenant / shop name</label><input id="m-name" type="text" value="${esc(t.name)}">
+
+    <label>Monthly rent</label>
+    <div class="card" style="margin-bottom:2px;">
+      <div class="row"><span class="num" style="font-weight:700;font-size:18px;">${fmtMoney(currentRate)}/mo</span><button class="link-btn" onclick="openModal('changeRent')">${ic("trending_up")}Change rent</button></div>
+      <div class="meta">Since ${esc(fmtMonth(currentEntry.effective_month))}</div>
+      ${upcoming.length ? upcoming.map(h=>`<div class="meta" style="margin-top:4px;">${ic("schedule")} ${fmtMoney(h.rent)}/mo scheduled from ${esc(fmtMonth(h.effective_month))}</div>`).join("") : ""}
+    </div>
+
+    <div class="toggle-row">
+      <div>Moved out<div class="meta" style="margin-top:2px;">Hides them from the active list, keeps their whole ledger</div></div>
+      <label class="switch"><input type="checkbox" ${t.archived?"checked":""} onchange="toggleArchiveTenant('${t.id}', this.checked)"><span class="slider"></span></label>
+    </div>
+    <button class="btn" style="margin-top:16px;" onclick="updateTenantSave('${t.id}')">Save changes</button>
+    <button class="btn danger" style="margin-top:8px;" onclick="deleteTenantConfirm('${t.id}')">Delete tenant permanently</button>
+    ${errMsg ? `<button class="btn danger" style="margin-top:8px;background:#7a1210;" onclick="forceDeleteTenantConfirm('${t.id}')">${ic("delete_forever")}Force delete anyway (admin)</button>` : ""}
+  `);
+};
+async function updateTenantSave(id){
+  await Repo.updateTenant(id, {name:document.getElementById("m-name").value.trim()});
+  closeModal(); render();
+}
+async function toggleArchiveTenant(id, archived){
+  await Repo.archiveTenant(id, archived);
+  toast(archived ? "Tenant marked as moved out" : "Tenant restored to active");
+  const root = document.getElementById("modal-root");
+  if (root) Modals.editTenant(null, root);
+}
+async function deleteTenantConfirm(id){
+  const t = await get("tenants", id);
+  if (!confirm("Delete this tenant permanently? This can't be undone.")) return;
+  try{
+    await Repo.deleteTenant(id);
+    closeModal(); toast("Tenant deleted"); openPropertyTenants(t.property_id);
+  }catch(e){
+    toast(e.message);
+    const root = document.getElementById("modal-root");
+    if (root) Modals.editTenant(null, root, e.message);
+  }
+}
+async function forceDeleteTenantConfirm(id){
+  const t = await get("tenants", id);
+  const txns = (await getAll("transactions")).filter(x=>x.tenant_id===id);
+  const total = txns.reduce((s,x)=> s + (x.type==="ADJUSTMENT" ? Math.abs(x.adjustment_amount||0) : (x.total_amount+x.repair_amount)), 0);
+  const warning = txns.length
+    ? `Force delete "${t.name}" permanently? This also erases ${txns.length} recorded transaction${txns.length===1?"":"s"} (${fmtMoney(total)} total) and their audit history. This cannot be undone.`
+    : `Force delete "${t.name}" permanently? This cannot be undone.`;
+  if (!confirm(warning)) return;
+  await Repo.forceDeleteTenant(id);
+  closeModal(); toast("Tenant and all their records deleted"); openPropertyTenants(t.property_id);
+}
+
+Modals.changeRent = async (_, root) => {
+  const t = await get("tenants", State.tenantId);
+  const currentRate = rentRateForMonth(t, monthKey());
+  const minMonth = addMonths(t.last_accrual_month || monthKey(), 1);
+  root.innerHTML = modalShell("Change rent", `
+    <div class="card"><div class="row"><span class="meta">Current rent</span><span class="num" style="font-weight:700;">${fmtMoney(currentRate)}/mo</span></div></div>
+    <div class="segmented" style="margin-top:14px;">
+      <button id="rc-tab-correct" class="active" onclick="setRentChangeMode('correct')">Fix a mistake</button>
+      <button id="rc-tab-schedule" onclick="setRentChangeMode('schedule')">Record an increase</button>
+    </div>
+
+    <div id="rc-correct-fields">
+      <div class="meta" style="margin-bottom:8px;">Corrects a typo in the current rate — also fixes any months already charged at the wrong amount.</div>
+      <label>Correct monthly rent</label>
+      <input id="rc-correct-amount" type="number" step="0.01" value="${currentRate}" oninput="refreshRentCorrectionPreview('${t.id}')">
+      <div id="rc-correct-preview" class="meta" style="margin-top:6px;"></div>
+      <button class="btn" style="margin-top:16px;" onclick="submitCorrectRent('${t.id}')">${ic("check")}Save correction</button>
+    </div>
+
+    <div id="rc-schedule-fields" style="display:none;">
+      <div class="meta" style="margin-bottom:8px;">For a genuine change, like a yearly increase — past months stay at the old rate.</div>
+      <label>New monthly rent</label>
+      <input id="rc-schedule-amount" type="number" step="0.01" value="${currentRate}">
+      <label>Effective from</label>
+      <input id="rc-schedule-month" type="month" min="${minMonth}" value="${minMonth}">
+      <button class="btn" style="margin-top:16px;" onclick="submitScheduleRent('${t.id}')">${ic("check")}Save change</button>
+    </div>
+  `);
+  refreshRentCorrectionPreview(t.id);
+};
+function setRentChangeMode(mode){
+  document.getElementById("rc-tab-correct").classList.toggle("active", mode==="correct");
+  document.getElementById("rc-tab-schedule").classList.toggle("active", mode==="schedule");
+  document.getElementById("rc-correct-fields").style.display = mode==="correct" ? "block":"none";
+  document.getElementById("rc-schedule-fields").style.display = mode==="schedule" ? "block":"none";
+}
+async function refreshRentCorrectionPreview(tenantId){
+  const el = document.getElementById("rc-correct-preview"); if(!el) return;
+  const t = await get("tenants", tenantId);
+  const newRate = Number(document.getElementById("rc-correct-amount").value)||0;
+  const currentRate = rentRateForMonth(t, monthKey());
+  const history = (t.rent_history && t.rent_history.length) ? t.rent_history : [{effective_month: monthKey(t.start_date), rent: t.monthly_rent||0}];
+  const last = history[history.length-1];
+  const accrualEnd = t.last_accrual_month || monthKey();
+  const months = last.effective_month <= accrualEnd ? monthsBetween(last.effective_month, accrualEnd) + 1 : 0;
+  const delta = (newRate - currentRate) * months;
+  if (Math.round(delta*100) === 0){ el.textContent = ""; return; }
+  el.textContent = `${delta>0?"Adds":"Removes"} ${fmtMoney(Math.abs(delta))} ${delta>0?"to":"from"} their balance — ${months} month${months===1?"":"s"} already charged at ${fmtMoney(currentRate)}/mo.`;
+}
+async function submitCorrectRent(id){
+  const newRate = document.getElementById("rc-correct-amount").value;
+  try{
+    await Repo.correctCurrentRent(id, newRate);
+    closeModal(); toast("Rent corrected"); render();
+  }catch(e){ toast(e.message); }
+}
+async function submitScheduleRent(id){
+  const newRate = document.getElementById("rc-schedule-amount").value;
+  const effectiveMonth = document.getElementById("rc-schedule-month").value;
+  try{
+    await Repo.scheduleRentChange(id, newRate, effectiveMonth);
+    closeModal(); toast(`Rent change scheduled from ${fmtMonth(effectiveMonth)}`); render();
+  }catch(e){ toast(e.message); }
+}
+
+Modals.adjustBalance = async (_, root) => {
+  const t = await get("tenants", State.tenantId);
+  root.innerHTML = modalShell("Adjust balance", `
+    <div class="card" style="margin-bottom:2px;"><div class="row"><span class="meta">Current balance</span><span class="num" style="font-weight:700;">${fmtMoney(t.current_balance||0)}</span></div></div>
+    <label>Amount</label>
+    <input id="adj-amount" type="number" step="0.01" placeholder="e.g. 29000">
+    <div class="meta" style="margin-top:2px;">Positive adds to what they owe — use this for pending dues carried over from a paper ledger or an earlier system. Negative reduces it, e.g. a goodwill credit.</div>
+    <label>Note (optional)</label>
+    <input id="adj-note" type="text" placeholder="e.g. Pending due carried forward">
+    <label>Date</label>
+    <input id="adj-date" type="date" value="${todayISO()}">
+    <button class="btn" style="margin-top:16px;" onclick="submitAdjustBalance('${t.id}')">${ic("check")}Save adjustment</button>
+  `);
+};
+async function submitAdjustBalance(id){
+  const amount = document.getElementById("adj-amount").value;
+  if (!amount) return toast("Enter an amount");
+  const note = document.getElementById("adj-note").value.trim();
+  const date = document.getElementById("adj-date").value || todayISO();
+  try{
+    await Repo.recordBalanceAdjustment({tenant_id:id, amount, note, date});
+    closeModal(); toast("Balance adjusted"); render();
+  }catch(e){ toast(e.message); }
+}
+
+Modals.addPartner = (_, root) => {
+  root.innerHTML = modalShell("Add partner", `
+    <label>Partner name</label><input id="m-name" type="text">
+    <label>Share of the pool (%)</label><input id="m-share" type="number" step="0.01">
+    <button class="btn" style="margin-top:16px;" onclick="savePartner()">Save partner</button>
+  `);
+};
+async function savePartner(){
+  const name = document.getElementById("m-name").value.trim();
+  if (!name) return toast("Enter a partner name");
+  await Repo.addPartner({name, share_percent:document.getElementById("m-share").value});
+  closeModal(); render();
+}
+Modals.editPartner = async (id, root) => {
+  const p = await get("partners", id);
+  root.innerHTML = modalShell("Edit partner", `
+    <label>Partner name</label><input id="m-name" type="text" value="${esc(p.name)}">
+    <label>Share of the pool (%)</label><input id="m-share" type="number" step="0.01" value="${p.share_percent}">
+    <label>Running balance</label><input id="m-bal" type="number" step="0.01" value="${p.running_balance}">
+    <button class="btn" style="margin-top:16px;" onclick="updatePartnerSave('${p.id}')">Save changes</button>
+  `);
+};
+async function updatePartnerSave(id){
+  await Repo.updatePartner(id, {name:document.getElementById("m-name").value.trim(), share_percent:Number(document.getElementById("m-share").value)||0, running_balance:Number(document.getElementById("m-bal").value)||0});
+  closeModal(); render();
+}
+
+Modals.addReceiver = async (_, root) => {
+  const partners = await Repo.allPartners();
+  root.innerHTML = modalShell("Add receiver", `
+    <label>Receiver name</label><input id="m-name" type="text">
+    <label>Reports cash into which partner's pool?</label>
+    <select id="m-partner"><option value="">No partner (unlinked)</option>${partners.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>
+    <button class="btn" style="margin-top:16px;" onclick="saveReceiver()">Save receiver</button>
+  `);
+};
+async function saveReceiver(){
+  const name = document.getElementById("m-name").value.trim();
+  if (!name) return toast("Enter a receiver name");
+  await Repo.addReceiver({name, partner_id: document.getElementById("m-partner").value || null});
+  closeModal(); render();
+}
+
+// ---- Monthly Snapshot (shareable image) ----
+async function openSnapshotModal(){
+  document.getElementById("modal-root")?.remove();
+  const root = document.createElement("div"); root.id="modal-root"; document.body.appendChild(root);
+  const month = State.snapshotMonth || monthKey();
+  root.innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+      <div class="modal">
+        <div class="sheet-handle"></div>
+        <div class="modal-head"><h2>Monthly snapshot</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
+        <label>Month</label>
+        <input type="month" id="snap-month" max="${monthKey()}" value="${month}" onchange="State.snapshotMonth=this.value; renderSnapshotPreview();">
+        <div class="snapshot-canvas-wrap"><canvas id="snap-canvas"></canvas></div>
+        <button class="btn" onclick="downloadSnapshot()">${ic("download")}Download PNG</button>
+        <button class="btn secondary" id="snap-share-btn" style="margin-top:8px;display:none;" onclick="shareSnapshot()">${ic("share")}Share image</button>
+      </div>
+    </div>
+  `;
+  await renderSnapshotPreview();
+  if (navigator.share && navigator.canShare){
+    const shareBtn = document.getElementById("snap-share-btn");
+    if (shareBtn) shareBtn.style.display = "block";
+  }
+}
+async function buildSnapshotData(mk){
+  const [collected, arrears, cashRows, statuses, byProperty] = await Promise.all([
+    Repo.totalCollectedForMonth(mk), Repo.arrearsAsOf(mk), Repo.cashInHandByReceiver(),
+    Repo.monthlyStatusForAllTenants(mk), Repo.monthlyPropertyBreakdown(mk)
+  ]);
+  const cashTotal = cashRows.reduce((s,r)=>s+r.amount,0);
+  const paidCount = statuses.filter(s=>s.status==="paid").length;
+  return { mk, collected, arrears, cashTotal, totalTenants: statuses.length, paidCount, byProperty };
+}
+function cssVar(name, fallback){ const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v || fallback; }
+async function renderSnapshotPreview(){
+  const mk = document.getElementById("snap-month")?.value || State.snapshotMonth || monthKey();
+  State.snapshotMonth = mk;
+  const data = await buildSnapshotData(mk);
+  const canvas = document.getElementById("snap-canvas");
+  if (!canvas) return;
+  await drawSnapshotCanvas(canvas, data);
+}
+async function drawSnapshotCanvas(canvas, data){
+  try{ await document.fonts.ready; }catch(e){}
+  const W = 1080;
+  const margin = 56;
+  const gap = 36;
+  const colW = (W - margin*2 - 20) / 2;
+  const primary = cssVar('--md-primary', '#2F6B5E');
+  const onPrimary = '#ffffff';
+  const ink = cssVar('--md-on-surface', '#191C1B');
+  const inkSoft = cssVar('--md-on-surface-variant', '#48504C');
+  const surfaceVariant = cssVar('--md-surface-variant', '#DDE5E0');
+  const line = cssVar('--md-outline-variant', '#E2E6E2');
+
+  const headerH = 200, statsH = 300, propRowH = 84, propHeaderH = 60, footerH = 90;
+  const propsH = data.byProperty.length ? propHeaderH + data.byProperty.length*propRowH : 0;
+  const H = headerH + gap + statsH + gap + propsH + gap + footerH;
+
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle = primary;
+  ctx.fillRect(0,0,W,headerH);
+  ctx.fillStyle = onPrimary;
+  ctx.font = "700 52px Roboto, sans-serif";
+  ctx.fillText("myTenants", margin, 96);
+  ctx.font = "500 32px Roboto, sans-serif";
+  ctx.globalAlpha = 0.92;
+  ctx.fillText(fmtMonth(data.mk) + " summary", margin, 148);
+  ctx.globalAlpha = 1;
+
+  let y = headerH + gap;
+  function statTile(x, yy, w, h, label, value){
+    ctx.fillStyle = surfaceVariant;
+    roundRectPath(ctx, x, yy, w, h, 18);
+    ctx.fill();
+    ctx.fillStyle = inkSoft;
+    ctx.font = "500 22px Roboto, sans-serif";
+    ctx.fillText(label, x+24, yy+40);
+    ctx.fillStyle = ink;
+    ctx.font = "700 40px Roboto, sans-serif";
+    ctx.fillText(value, x+24, yy+h-28);
+  }
+  const tileH = (statsH - 20) / 2;
+  statTile(margin, y, colW, tileH, "Collected this month", fmtMoney(data.collected));
+  statTile(margin+colW+20, y, colW, tileH, "Arrears as of month end", fmtMoney(data.arrears));
+  statTile(margin, y+tileH+20, colW, tileH, "Cash in hand (unsettled)", fmtMoney(data.cashTotal));
+  statTile(margin+colW+20, y+tileH+20, colW, tileH, "Tenants paid", `${data.paidCount} / ${data.totalTenants}`);
+  y += statsH + gap;
+
+  if (data.byProperty.length){
+    ctx.fillStyle = ink;
+    ctx.font = "700 30px Roboto, sans-serif";
+    ctx.fillText("By property", margin, y+8);
+    y += propHeaderH;
+    for (const p of data.byProperty){
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(margin, y+propRowH-1); ctx.lineTo(W-margin, y+propRowH-1); ctx.stroke();
+
+      ctx.fillStyle = ink;
+      ctx.font = "600 30px Roboto, sans-serif";
+      ctx.fillText(truncateCanvasText(ctx, p.property.name, W - margin*2 - 260), margin, y+38);
+
+      ctx.fillStyle = inkSoft;
+      ctx.font = "400 22px Roboto, sans-serif";
+      ctx.fillText(`${p.paid} paid · ${p.partial} partial · ${p.due} due`, margin, y+70);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = ink;
+      ctx.font = "700 30px Roboto, sans-serif";
+      ctx.fillText(fmtMoney(p.collected), W-margin, y+44);
+      ctx.textAlign = 'left';
+
+      y += propRowH;
+    }
+  }
+
+  ctx.fillStyle = inkSoft;
+  ctx.font = "400 20px Roboto, sans-serif";
+  ctx.textAlign = 'center';
+  ctx.fillText(`Generated ${fmtDate(todayISO())} · myTenants`, W/2, H-36);
+  ctx.textAlign = 'left';
+}
+function roundRectPath(ctx,x,y,w,h,r){
+  if (ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x,y,w,h,r); return; }
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function truncateCanvasText(ctx, text, maxWidth){
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let t = text;
+  while (t.length>1 && ctx.measureText(t+"…").width > maxWidth) t = t.slice(0,-1);
+  return t + "…";
+}
+function downloadSnapshot(){
+  const canvas = document.getElementById("snap-canvas");
+  if (!canvas) return;
+  const url = canvas.toDataURL("image/png");
+  const a = document.createElement("a");
+  a.href = url; a.download = `mytenants-${State.snapshotMonth||monthKey()}.png`;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("Snapshot downloaded");
+}
+async function shareSnapshot(){
+  const canvas = document.getElementById("snap-canvas");
+  if (!canvas) return;
+  canvas.toBlob(async (blob) => {
+    if (!blob) return;
+    const file = new File([blob], `mytenants-${State.snapshotMonth||monthKey()}.png`, {type:"image/png"});
+    try{
+      if (navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:"myTenants monthly snapshot"});
+      } else {
+        toast("Sharing isn't supported on this device — use Download instead");
+      }
+    }catch(e){ /* user cancelled the share sheet */ }
+  }, "image/png");
+}
+
+// ---- Add Payment (full screen bottom sheet) ----
+function receiverPickerHtml(receivers, partnerById, opts={}){
+  const isMulti = !!opts.multi;
+  const singleSelectedId = opts.singleSelectedId || "";
+  const receiverOption = (r) => `<option value="${r.id}" ${singleSelectedId===r.id?"selected":""}>${esc(r.name)}${r.partner_id && partnerById[r.partner_id] ? " — "+esc(partnerById[r.partner_id].name)+"'s pool" : ""}</option>`;
+  return `
+    <div id="ap-receiver-single-wrap" style="display:${isMulti?"none":"block"};">
+      <label>Received by</label>
+      <select id="ap-receiver-single">
+        <option value="">Not recorded yet</option>
+        ${receivers.map(receiverOption).join("")}
+      </select>
+      <button type="button" class="link-btn" style="margin-top:6px;" onclick="apShowMultiSplit()">${ic("call_split")}Split between more than one person</button>
+    </div>
+    <div id="ap-split-fields" style="display:${isMulti?"block":"none"};">
+      <label>Split across receivers</label>
+      <div id="ap-split-rows"></div>
+      <button class="link-btn" onclick="apAddSplitRow()">${ic("add")}Add another receiver</button>
+      <div id="ap-split-sum" class="split-sum"></div>
+      <button type="button" class="link-btn" style="margin-top:6px;" onclick="apShowSingleReceiver()">${ic("close")}Use a single receiver instead</button>
+    </div>
+  `;
+}
+function apShowMultiSplit(){
+  document.getElementById("ap-receiver-single-wrap").style.display = "none";
+  document.getElementById("ap-split-fields").style.display = "block";
+  if (!document.getElementById("ap-split-rows").children.length) apAddSplitRow();
+  apRefreshSplitSum();
+}
+function apShowSingleReceiver(){
+  document.getElementById("ap-split-fields").style.display = "none";
+  document.getElementById("ap-receiver-single-wrap").style.display = "block";
+}
+function apCollectReceivers(total_amount){
+  const multiMode = document.getElementById("ap-split-fields").style.display !== "none";
+  if (multiMode){
+    const receiverEls = [...document.querySelectorAll(".ap-split-receiver")];
+    const amountEls = [...document.querySelectorAll(".ap-split-amount")];
+    return receiverEls.map((el,i)=>({receiver_id: el.value, amount: amountEls[i].value}));
+  }
+  const singleReceiver = document.getElementById("ap-receiver-single").value;
+  return singleReceiver ? [{receiver_id: singleReceiver, amount: total_amount}] : [];
+}
+
+async function openAddPayment(prefillTenantId){
+  const tenants = await Repo.allTenantsWithProperty();
+  const receivers = await Repo.allReceivers();
+  const partners = await Repo.allPartners();
+  const partnerById = Object.fromEntries(partners.map(p=>[p.id,p]));
+  const prefillTenant = prefillTenantId ? tenants.find(t=>t.id===prefillTenantId) : null;
+  document.getElementById("modal-root")?.remove();
+  const root = document.createElement("div"); root.id="modal-root"; document.body.appendChild(root);
+  root.innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+      <div class="modal">
+        <div class="sheet-handle"></div>
+        <div class="modal-head"><h2>Add payment</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
+
+        <label>Tenant</label>
+        <select id="ap-tenant">
+          <option value="">Select tenant…</option>
+          ${tenants.map(t=>`<option value="${t.id}" ${prefillTenantId===t.id?"selected":""}>${esc(t.name)} — ${esc(t.property?t.property.name:"")}${t.archived?" (moved out)":""}</option>`).join("")}
+        </select>
+        ${prefillTenant && prefillTenant.current_balance>0.004 ? `<div class="meta" style="margin-top:4px;">Currently owes ${fmtMoney(prefillTenant.current_balance)}</div>` : ""}
+
+        <label>Amount received</label>
+        <input id="ap-amount" type="number" step="0.01" value="${prefillTenant && prefillTenant.current_balance>0.004 ? prefillTenant.current_balance : ""}" oninput="apRefreshSplitSum()">
+
+        <label>Date</label>
+        <input id="ap-date" type="date" value="${todayISO()}">
+
+        ${receiverPickerHtml(receivers, partnerById)}
+
+        <div class="toggle-row">
+          <div>Repair deduction</div>
+          <label class="switch"><input id="ap-repair-toggle" type="checkbox" onchange="apToggleRepair()"><span class="slider"></span></label>
+        </div>
+        <div id="ap-repair-fields" style="display:none;">
+          <label>Repair amount (credited to tenant, not counted as cash)</label>
+          <input id="ap-repair-amount" type="number" step="0.01">
+          <label>Receipt photo (optional)</label>
+          <input id="ap-receipt" type="file" accept="image/*" onchange="apReceiptChosen(event)">
+          <div id="ap-receipt-chip"></div>
+        </div>
+
+        <label>Note (optional)</label>
+        <input id="ap-note" type="text" placeholder="e.g. 2 months lump sum, or advance return">
+
+        <button class="btn" style="margin-top:16px;" onclick="submitAddPayment()">${ic("check")}Save payment</button>
+      </div>
+    </div>
+  `;
+  root._receivers = receivers;
+}
+function apToggleRepair(){ document.getElementById("ap-repair-fields").style.display = document.getElementById("ap-repair-toggle").checked ? "block":"none"; }
+let _apReceiptDataUrl = null;
+function apReceiptChosen(ev){
+  const f = ev.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = () => { _apReceiptDataUrl = reader.result; document.getElementById("ap-receipt-chip").innerHTML = `<span class="file-chip">${ic("attach_file")}${esc(f.name)}</span>`; };
+  reader.readAsDataURL(f);
+}
+function apAddSplitRow(prefillReceiverId, prefillAmount){
+  const receivers = document.getElementById("modal-root")._receivers || [];
+  const wrap = document.getElementById("ap-split-rows");
+  const row = document.createElement("div");
+  row.className = "split-row";
+  row.innerHTML = `
+    <select class="ap-split-receiver">${receivers.map(r=>`<option value="${r.id}" ${prefillReceiverId===r.id?"selected":""}>${esc(r.name)}</option>`).join("")}</select>
+    <input class="ap-split-amount" type="number" step="0.01" placeholder="Amount" value="${prefillAmount!=null?prefillAmount:""}" oninput="apRefreshSplitSum()">
+    <button class="icon-btn" onclick="this.parentElement.remove(); apRefreshSplitSum();">${ic("close")}</button>
+  `;
+  wrap.appendChild(row);
+  apRefreshSplitSum();
+}
+function apRefreshSplitSum(){
+  const el = document.getElementById("ap-split-sum"); if(!el) return;
+  const total = Number(document.getElementById("ap-amount").value)||0;
+  const rows = [...document.querySelectorAll(".ap-split-amount")];
+  if (!rows.length){ el.textContent=""; return; }
+  const sum = rows.reduce((s,i)=>s+(Number(i.value)||0),0);
+  el.textContent = `Splits total ${fmtMoney(sum)} of ${fmtMoney(total)}`;
+  el.className = "split-sum " + (Math.abs(sum-total)<0.01 ? "ok":"bad");
+}
+async function submitAddPayment(){
+  const tenant_id = document.getElementById("ap-tenant").value;
+  if (!tenant_id) return toast("Select a tenant");
+  const total_amount = document.getElementById("ap-amount").value;
+  if (!total_amount) return toast("Enter the amount received");
+  const repairOn = document.getElementById("ap-repair-toggle").checked;
+  const repair_amount = repairOn ? document.getElementById("ap-repair-amount").value : 0;
+  const note = document.getElementById("ap-note").value.trim();
+  const date = document.getElementById("ap-date").value || todayISO();
+  const splits = apCollectReceivers(total_amount);
+  try{
+    await Repo.recordRentPayment({tenant_id, total_amount, repair_amount, note, receipt:_apReceiptDataUrl, date, splits});
+    _apReceiptDataUrl = null;
+    closeModal(); toast("Payment saved"); render();
+  }catch(e){ toast(e.message); }
+}
+
+// ---- Transaction detail (view / edit / void / audit) ----
+async function openTxnDetail(id){
+  const txn = await get("transactions", id);
+  const tenant = await get("tenants", txn.tenant_id);
+  const splits = await Repo.splitsFor(id);
+  const receivers = await Repo.allReceivers();
+  const rById = Object.fromEntries(receivers.map(r=>[r.id,r]));
+  const audit = await Repo.auditLogFor(id);
+  const isAdj = txn.type === "ADJUSTMENT";
+  const hasSettledSplit = splits.some(s=>s.settled_at);
+  const canEdit = !txn.is_voided && (isAdj || !hasSettledSplit);
+  document.getElementById("modal-root")?.remove();
+  const root = document.createElement("div"); root.id="modal-root"; document.body.appendChild(root);
+  root.innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+      <div class="modal">
+        <div class="sheet-handle"></div>
+        <div class="modal-head"><h2>${isAdj?"Balance adjustment":"Payment detail"}</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
+        <div class="card">
+          <div class="row"><div class="name">${esc(tenant?tenant.name:"—")}</div>${txn.is_voided?'<span class="chip due">Voided</span>':""}</div>
+          <div class="meta">${fmtDate(txn.date)}</div>
+          <div class="divider"></div>
+          ${isAdj ? `
+            <div class="row"><span class="meta">${txn.adjustment_amount>=0?"Added to balance":"Reduced from balance"}</span><span class="num">${fmtMoney(Math.abs(txn.adjustment_amount||0))}</span></div>
+          ` : `
+            <div class="row"><span class="meta">Amount received</span><span class="num">${fmtMoney(txn.total_amount)}</span></div>
+            ${txn.repair_amount ? `<div class="row"><span class="meta">Repair deduction</span><span class="num">${fmtMoney(txn.repair_amount)}</span></div>` : ""}
+          `}
+          ${txn.note ? `<div class="row"><span class="meta">Note</span><span>${esc(txn.note)}</span></div>` : ""}
+          ${txn.receipt ? `<div style="margin-top:8px;"><img src="${txn.receipt}" style="max-width:100%;border-radius:12px;"></div>` : ""}
+        </div>
+        ${splits.length ? `<div class="section-title">${ic("call_split")}Splits</div><div class="card">${splits.map(s=>`
+          <div class="row"><span>${esc(rById[s.receiver_id]?rById[s.receiver_id].name:"—")}</span><span class="num">${fmtMoney(s.amount)}${s.settled_at?" · settled":""}</span></div>`).join("")}</div>` : ""}
+        ${audit.length ? `<div class="section-title">${ic("history")}Audit history</div><div class="card">${audit.map(a=>`<div class="audit-row">${ic("info")}${a.action} · ${fmtDate(a.timestamp)}</div>`).join("")}</div>` : ""}
+        ${!txn.is_voided && !isAdj && hasSettledSplit ? `<div class="warn-box" style="margin-top:12px;">${ic("info")}This payment's cash has already been settled with a partner, so it can't be edited — void it instead if it was a mistake.</div>` : ""}
+        ${canEdit ? `<button class="btn secondary" style="margin-top:14px;" onclick="openEditTxn('${id}')">${ic("edit")}Edit this ${isAdj?"adjustment":"payment"}</button>` : ""}
+        ${!txn.is_voided ? `<button class="btn danger" style="margin-top:8px;" onclick="voidTxnConfirm('${id}')">${ic("undo")}Void this ${isAdj?"adjustment":"transaction"}</button>` : ""}
+        <button class="btn danger" style="margin-top:8px;background:#7a1210;" onclick="deleteTxnPermanentlyConfirm('${id}')">${ic("delete_forever")}Delete permanently (admin)</button>
+      </div>
+    </div>
+  `;
+}
+async function openEditTxn(id){
+  const txn = await get("transactions", id);
+  if (!txn || txn.is_voided) return;
+  if (txn.type === "ADJUSTMENT") return openEditAdjustment(id);
+  return openEditPayment(id);
+}
+async function openEditPayment(id){
+  const txn = await get("transactions", id);
+  const splits = await Repo.splitsFor(id);
+  if (splits.some(s=>s.settled_at)){
+    toast("This payment's cash has already been settled — void it instead if it was a mistake.");
+    return;
+  }
+  const tenant = await get("tenants", txn.tenant_id);
+  const receivers = await Repo.allReceivers();
+  const partners = await Repo.allPartners();
+  const partnerById = Object.fromEntries(partners.map(p=>[p.id,p]));
+  const isMulti = splits.length > 1;
+  document.getElementById("modal-root")?.remove();
+  const root = document.createElement("div"); root.id="modal-root"; document.body.appendChild(root);
+  root._receivers = receivers;
+  _apReceiptDataUrl = txn.receipt || null;
+  root.innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+      <div class="modal">
+        <div class="sheet-handle"></div>
+        <div class="modal-head"><h2>Edit payment</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
+
+        <div class="card"><div class="row"><span class="meta">Tenant</span><span class="name">${esc(tenant?tenant.name:"—")}</span></div></div>
+
+        <label>Amount received</label>
+        <input id="ap-amount" type="number" step="0.01" value="${txn.total_amount}" oninput="apRefreshSplitSum()">
+
+        <label>Date</label>
+        <input id="ap-date" type="date" value="${txn.date}">
+
+        ${receiverPickerHtml(receivers, partnerById, {multi:isMulti, singleSelectedId: !isMulti && splits[0] ? splits[0].receiver_id : ""})}
+
+        <div class="toggle-row">
+          <div>Repair deduction</div>
+          <label class="switch"><input id="ap-repair-toggle" type="checkbox" ${txn.repair_amount?"checked":""} onchange="apToggleRepair()"><span class="slider"></span></label>
+        </div>
+        <div id="ap-repair-fields" style="display:${txn.repair_amount?"block":"none"};">
+          <label>Repair amount (credited to tenant, not counted as cash)</label>
+          <input id="ap-repair-amount" type="number" step="0.01" value="${txn.repair_amount||0}">
+          <label>Replace receipt photo (optional)</label>
+          <input id="ap-receipt" type="file" accept="image/*" onchange="apReceiptChosen(event)">
+          <div id="ap-receipt-chip">${txn.receipt?`<span class="file-chip">${ic("attach_file")}Current receipt kept unless replaced</span>`:""}</div>
+        </div>
+
+        <label>Note (optional)</label>
+        <input id="ap-note" type="text" value="${esc(txn.note||"")}">
+
+        <button class="btn" style="margin-top:16px;" onclick="submitEditPayment('${id}')">${ic("check")}Save changes</button>
+      </div>
+    </div>
+  `;
+  if (isMulti) splits.forEach(s => apAddSplitRow(s.receiver_id, s.amount));
+  apRefreshSplitSum();
+}
+async function submitEditPayment(id){
+  const total_amount = document.getElementById("ap-amount").value;
+  if (!total_amount) return toast("Enter the amount received");
+  const repairOn = document.getElementById("ap-repair-toggle").checked;
+  const repair_amount = repairOn ? document.getElementById("ap-repair-amount").value : 0;
+  const note = document.getElementById("ap-note").value.trim();
+  const date = document.getElementById("ap-date").value || todayISO();
+  const splits = apCollectReceivers(total_amount);
+  try{
+    await Repo.editRentPayment(id, {total_amount, repair_amount, note, receipt:_apReceiptDataUrl, date, splits});
+    _apReceiptDataUrl = null;
+    closeModal(); toast("Payment updated"); render();
+  }catch(e){ toast(e.message); }
+}
+async function openEditAdjustment(id){
+  const txn = await get("transactions", id);
+  const tenant = await get("tenants", txn.tenant_id);
+  document.getElementById("modal-root")?.remove();
+  const root = document.createElement("div"); root.id="modal-root"; document.body.appendChild(root);
+  root.innerHTML = modalShell("Edit adjustment", `
+    <div class="card"><div class="row"><span class="meta">Tenant</span><span class="name">${esc(tenant?tenant.name:"—")}</span></div></div>
+    <label>Amount</label>
+    <input id="adj-amount" type="number" step="0.01" value="${txn.adjustment_amount}">
+    <div class="meta" style="margin-top:2px;">Positive adds to what they owe, negative reduces it.</div>
+    <label>Note (optional)</label>
+    <input id="adj-note" type="text" value="${esc(txn.note||"")}">
+    <label>Date</label>
+    <input id="adj-date" type="date" value="${txn.date}">
+    <button class="btn" style="margin-top:16px;" onclick="submitEditAdjustment('${id}')">${ic("check")}Save changes</button>
+  `);
+}
+async function submitEditAdjustment(id){
+  const amount = document.getElementById("adj-amount").value;
+  if (!amount) return toast("Enter an amount");
+  const note = document.getElementById("adj-note").value.trim();
+  const date = document.getElementById("adj-date").value || todayISO();
+  try{
+    await Repo.editBalanceAdjustment(id, {amount, note, date});
+    closeModal(); toast("Adjustment updated"); render();
+  }catch(e){ toast(e.message); }
+}
+async function voidTxnConfirm(id){
+  if (!confirm("Void this transaction? This reverses its effect on the tenant's balance and is logged in the audit trail.")) return;
+  await Repo.voidTransaction(id);
+  closeModal(); toast("Transaction voided"); render();
+}
+async function deleteTxnPermanentlyConfirm(id){
+  const txn = await get("transactions", id);
+  const isAdj = txn.type === "ADJUSTMENT";
+  const amt = isAdj ? Math.abs(txn.adjustment_amount||0) : (txn.total_amount+txn.repair_amount);
+  if (!confirm(`Delete this ${isAdj?"adjustment":"transaction"} (${fmtMoney(amt)}) permanently, including its audit history? This is different from voiding — there will be no record it ever existed. This cannot be undone.`)) return;
+  await Repo.deleteTransactionPermanently(id);
+  closeModal(); toast("Deleted permanently"); render();
+}
+
+function modalShell(title, inner){
+  return `<div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+    <div class="modal">
+      <div class="sheet-handle"></div>
+      <div class="modal-head"><h2>${esc(title)}</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
+      ${inner}
+    </div>
+  </div>`;
+}
+
+// expose functions used via inline onclick handlers
+Object.assign(window, {
+  goTab, openPropertyTenants, openTenantLedger, openModal, closeModal, setTenantsViewMode,
+  saveProperty, updatePropertySave, deletePropertyConfirm,
+  saveTenant, updateTenantSave, deleteTenantConfirm, forceDeleteTenantConfirm, toggleArchiveTenant, submitAdjustBalance,
+  setRentChangeMode, refreshRentCorrectionPreview, submitCorrectRent, submitScheduleRent,
+  savePartner, updatePartnerSave, removePartner,
+  saveReceiver, removeReceiver, importBackup,
+  openSnapshotModal, renderSnapshotPreview, downloadSnapshot, shareSnapshot,
+  openAddPayment, apToggleRepair, apReceiptChosen, apShowMultiSplit, apShowSingleReceiver, apAddSplitRow, apRefreshSplitSum, submitAddPayment,
+  openTxnDetail, openEditTxn, openEditPayment, submitEditPayment, openEditAdjustment, submitEditAdjustment, voidTxnConfirm, deleteTxnPermanentlyConfirm, submitSettlement, Repo, State
+});
+
+// ---------- init ----------
+(async function init(){
+  await openDB();
+  await Repo.runDueAccruals();
+  render();
+})();
+
+// Register the service worker so the app shell works once installed, even
+// with no signal. Registered relative to this file, so it works whether the
+// app sits at a domain root or a GitHub Pages subpath.
+if ("serviceWorker" in navigator){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
