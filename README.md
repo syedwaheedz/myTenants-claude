@@ -188,6 +188,44 @@ happens), tap **Split between more than one person** to switch to the
 multi-receiver entry instead — same as before, each row's amount must add
 up to the total received.
 
+## Dashboard: more at a glance
+
+The Dashboard now surfaces things that used to need a trip to another
+tab:
+
+- **This month, at a glance** — Paid/Partial/Due tenant counts for the
+  whole portfolio this month (tap through to Defaulters)
+- **Top defaulters** — the top 3 outstanding balances by name, right
+  under the "Arrears by property" chart, with a link to the full list
+- **Partner balances** — every partner's current running balance, with a
+  plain-language label ("Owed to them" / "Owes this out" / "Settled up")
+  instead of having to open Manage Partners to check
+
+All three link through to their full screen when tapped, same as the
+existing recent-activity cards.
+
+## When a settlement transfer doesn't actually happen
+
+Each suggested transfer on the Settlement screen now has its own **Paid
+this transfer** toggle, on by default. Switch it off when the money
+hasn't actually changed hands yet (or won't in full) — the amount field
+disables and zeroes out, and a note confirms exactly what carries
+forward ("₹15,000 still owed — carries forward to next month"). You can
+also just edit the amount down to whatever partial sum did move; whatever's
+left over becomes that partner's running balance, and shows up folded
+into their entitlement the next time you run a settlement — a still-owed
+amount and a fresh month's imbalance combine into a single updated
+transfer automatically, so you're never tracking multiple outstanding
+amounts between the same two partners by hand.
+
+Recording a settlement used to only update each partner's balance number
+silently, with no actual record of who paid whom. There's now a real,
+permanent entry for every transfer — **Cash in Hand → View settlement
+history** shows each one with who owed whom, how much actually moved,
+and its status (Paid / Partial / Unpaid), so "did A ever pay B that
+₹15,000" is something you can look up rather than infer from a balance
+figure.
+
 ## Requesting payment via WhatsApp
 
 Each defaulter's card also has a **WhatsApp** button next to Record

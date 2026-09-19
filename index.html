@@ -255,8 +255,8 @@
    ========================================================================= */
 
 const DB_NAME = "mytenants";
-const DB_VERSION = 1;
-const STORES = ["properties","tenants","partners","receivers","transactions","transaction_splits","partner_settlements","audit_log"];
+const DB_VERSION = 2;
+const STORES = ["properties","tenants","partners","receivers","transactions","transaction_splits","partner_settlements","partner_transfers","audit_log"];
 const PALETTE = ["#2F6B5E","#B3402A","#9A6B00","#3B6EA5","#7E57C2","#4B635B","#C2410C","#0E7490"];
 
 // ---------- tiny helpers ----------
@@ -785,27 +785,42 @@ const Repo = {
   // new running_balance, same "shortfall carries to next period" rule as before.
   async recordSettlement(period, computed, transferAmounts){
     const movement = {}; // partner_id -> net cash movement this round (received minus paid)
-    computed.transfers.forEach((t, idx) => {
-      const amt = Number(transferAmounts[idx]) || 0;
-      movement[t.from_partner_id] = (movement[t.from_partner_id]||0) - amt;
-      movement[t.to_partner_id] = (movement[t.to_partner_id]||0) + amt;
-    });
+    const transferDate = todayISO();
+    for (let idx = 0; idx < computed.transfers.length; idx++){
+      const t = computed.transfers[idx];
+      const paid = Number(transferAmounts[idx]) || 0;
+      movement[t.from_partner_id] = (movement[t.from_partner_id]||0) - paid;
+      movement[t.to_partner_id] = (movement[t.to_partner_id]||0) + paid;
+      const remaining = t.amount - paid;
+      const status = remaining <= 0.004 ? "paid" : (paid > 0.004 ? "partial" : "unpaid");
+      // An explicit, permanent record of who was supposed to pay whom, how much
+      // actually moved, and what's left — not just an update to a running number.
+      await put("partner_transfers", {
+        id: uid(), period, date: transferDate,
+        from_partner_id: t.from_partner_id, from_name: t.from_name,
+        to_partner_id: t.to_partner_id, to_name: t.to_name,
+        suggested_amount: t.amount, paid_amount: paid, remaining_amount: Math.max(0, remaining),
+        status
+      });
+    }
     for (const row of computed.rows){
       const closing = row.net - (movement[row.partner_id] || 0);
       await put("partner_settlements", {
         id:uid(), partner_id: row.partner_id, period, share_amount: row.share,
         opening_balance: row.opening_balance, collected: row.collected, net: row.net,
-        closing_balance: closing, date: todayISO()
+        closing_balance: closing, date: transferDate
       });
       const partner = await get("partners", row.partner_id);
       if (partner){ partner.running_balance = closing; await put("partners", partner); }
       for (const sid of row.split_ids){
         const split = await get("transaction_splits", sid);
-        if (split){ split.settled_at = todayISO(); await put("transaction_splits", split); }
+        if (split){ split.settled_at = transferDate; await put("transaction_splits", split); }
       }
     }
   },
   async settlementHistory(){ return (await getAll("partner_settlements")).sort((a,b)=>b.date.localeCompare(a.date)); },
+  async transferHistory(){ return (await getAll("partner_transfers")).sort((a,b)=>b.date.localeCompare(a.date)); },
+
 
   // ---- Reporting ----
   async defaulterTenants(){ return (await getAll("tenants")).filter(t=>(t.current_balance||0) > 0); },
@@ -1055,11 +1070,16 @@ function statusChip(balance){
 // ---------- Dashboard ----------
 const Screens = {};
 Screens.dashboard = async function(){
-  const [arrears, collected, recent, portfolio, trend, arrearsByProp, cashRows] = await Promise.all([
+  const [arrears, collected, recent, portfolio, trend, arrearsByProp, cashRows, monthlyStatuses, partners, defaulters] = await Promise.all([
     Repo.totalArrears(), Repo.totalCollectedThisMonth(), Repo.recentTransactions(6),
-    Repo.portfolioTotals(), Repo.monthlyCollections(6), Repo.arrearsByProperty(), Repo.cashInHandByReceiver()
+    Repo.portfolioTotals(), Repo.monthlyCollections(6), Repo.arrearsByProperty(), Repo.cashInHandByReceiver(),
+    Repo.monthlyStatusForAllTenants(monthKey()), Repo.allPartners(), Repo.defaulterTenantsWithProperty()
   ]);
   const cashTotal = cashRows.reduce((s,r)=>s+r.amount,0);
+  const paidCount = monthlyStatuses.filter(s=>s.status==="paid").length;
+  const partialCount = monthlyStatuses.filter(s=>s.status==="partial").length;
+  const dueCount = monthlyStatuses.filter(s=>s.status==="due").length;
+  const topDefaulters = defaulters.slice(0,3);
   const html = `
     <div class="stat-grid">
       <div class="stat">
@@ -1080,6 +1100,16 @@ Screens.dashboard = async function(){
       </div>
     </div>
 
+    ${monthlyStatuses.length ? `
+    <div class="card tap" onclick="goTab('defaulters')">
+      <div class="row"><div class="name">This month, at a glance</div><span class="meta">${fmtMonth(monthKey())}</span></div>
+      <div class="month-summary" style="margin-top:6px;margin-bottom:0;">
+        <span style="color:var(--paid);font-weight:600;">${ic("check_circle")} ${paidCount} paid</span>
+        <span style="color:var(--partial);font-weight:600;">${ic("hourglass_top")} ${partialCount} partial</span>
+        <span style="color:var(--due);font-weight:600;">${ic("schedule")} ${dueCount} due</span>
+      </div>
+    </div>` : ""}
+
     <div class="chart-card">
       <div class="chart-title">Collections trend</div>
       <div class="chart-sub">Last 6 months, rent payments only</div>
@@ -1095,6 +1125,34 @@ Screens.dashboard = async function(){
         ${chartLegend(arrearsByProp)}
       </div>
     </div>` : ""}
+
+    ${topDefaulters.length ? `
+    <div class="section-title">${ic("warning")}Top defaulters</div>
+    ${topDefaulters.map(t=>`
+      <div class="card tap" onclick="openTenantLedger('${t.id}')">
+        <div class="row">
+          <div><div class="name">${esc(t.name)}</div><div class="meta">${esc(t.property?t.property.name:"")}</div></div>
+          <span class="chip due num">${fmtMoney(t.current_balance)}</span>
+        </div>
+      </div>`).join("")}
+    ${defaulters.length > 3 ? `<button class="link-btn" onclick="goTab('defaulters')">${ic("chevron_right")}View all ${defaulters.length} defaulters</button>` : ""}
+    ` : ""}
+
+    ${partners.length ? `
+    <div class="section-title">${ic("groups")}Partner balances</div>
+    ${partners.map(p=>{
+      const bal = p.running_balance||0;
+      const label = Math.abs(bal)<0.005 ? "Settled up" : bal>0 ? "Owed to them" : "Owes this out";
+      const color = Math.abs(bal)<0.005 ? "var(--ink-soft)" : bal>0 ? "var(--paid)" : "var(--due)";
+      return `
+      <div class="card tap" onclick="goTab('partners')">
+        <div class="row">
+          <div><div class="name">${esc(p.name)}</div><div class="meta">${p.share_percent}% share · ${label}</div></div>
+          <span class="num" style="font-weight:700;color:${color};">${fmtMoney(Math.abs(bal))}</span>
+        </div>
+      </div>`;
+    }).join("")}
+    ` : ""}
 
     <div class="section-title">${ic("history")}Recent activity</div>
     ${recent.length ? recent.map(x=>{
@@ -1317,8 +1375,30 @@ Screens.cash = async function(){
         ${r.byProperty.length ? `<div class="meta" style="margin-top:6px;">${r.byProperty.map(x=>`${esc(x.property?x.property.name:"Unknown property")}: ${fmtMoney(x.amount)}`).join(" · ")}</div>` : ""}
       </div>`).join("") : `<div class="empty">${ic("payments")}<div class="big">Nothing to show</div>Cash held per receiver appears here once payments are recorded.</div>`}
     <button class="btn" style="margin-top:14px;" onclick="goTab('settlement')">${ic("balance")}Run settlement</button>
+    <button class="btn ghost" style="margin-top:8px;" onclick="goTab('transferHistory')">${ic("history")}View settlement history</button>
   `;
   Shell("Cash in hand", "Unsettled, by receiver and by partner", html);
+};
+
+Screens.transferHistory = async function(){
+  const transfers = await Repo.transferHistory();
+  const statusChipForTransfer = (status) => {
+    if (status==="paid") return `<span class="chip paid">${ic("check_circle")}Paid</span>`;
+    if (status==="partial") return `<span class="chip partial">${ic("hourglass_top")}Partial</span>`;
+    return `<span class="chip due">${ic("schedule")}Unpaid</span>`;
+  };
+  const html = `
+    <button class="back-btn" onclick="goTab('cash')">${ic("arrow_back")}Cash in hand</button>
+    ${transfers.length ? transfers.map(t => `
+      <div class="card">
+        <div class="row"><span class="name">${esc(t.from_name)} ${ic("arrow_forward")} ${esc(t.to_name)}</span>${statusChipForTransfer(t.status)}</div>
+        <div class="meta">${esc(fmtMonth(t.period))} settlement · recorded ${fmtDate(t.date)}</div>
+        <div class="row" style="margin-top:6px;"><span class="meta">Transferred</span><span class="num">${fmtMoney(t.paid_amount)} of ${fmtMoney(t.suggested_amount)}</span></div>
+        ${t.remaining_amount>0.004 ? `<div class="meta" style="margin-top:2px;color:var(--due);font-weight:600;">${fmtMoney(t.remaining_amount)} still owed — carried forward</div>` : ""}
+      </div>
+    `).join("") : `<div class="empty">${ic("swap_horiz")}<div class="big">No settlements recorded yet</div>Transfers between partners show up here once you record a settlement.</div>`}
+  `;
+  Shell("Settlement history", `${transfers.length} transfer${transfers.length===1?"":"s"} recorded`, html);
 };
 
 // ---------- Settlement ----------
@@ -1349,23 +1429,54 @@ Screens.settlement = async function(){
       <div class="section-title">${ic("swap_horiz")}Suggested transfers to even it out</div>
       ${computed.transfers.map((t,idx)=>`
         <div class="card">
-          <div class="row"><span class="name">${esc(t.from_name)} ${ic("arrow_forward")} ${esc(t.to_name)}</span></div>
-          <label>Amount actually transferred</label>
-          <input type="number" step="0.01" id="transfer-${idx}" value="${t.amount.toFixed(2)}">
+          <div class="row"><span class="name">${esc(t.from_name)} ${ic("arrow_forward")} ${esc(t.to_name)}</span><span class="num" style="font-weight:700;">${fmtMoney(t.amount)}</span></div>
+          <div class="toggle-row">
+            <div>Paid this transfer<div class="meta" id="transfer-note-${idx}" style="margin-top:2px;"></div></div>
+            <label class="switch"><input type="checkbox" id="transfer-paid-${idx}" checked onchange="toggleTransferPaid(${idx})"><span class="slider"></span></label>
+          </div>
+          <div id="transfer-amount-wrap-${idx}">
+            <label>Amount actually transferred</label>
+            <input type="number" step="0.01" id="transfer-${idx}" data-suggested="${t.amount.toFixed(2)}" value="${t.amount.toFixed(2)}" oninput="refreshTransferNote(${idx})">
+          </div>
         </div>`).join("")}
     ` : (computed.rows.length ? `<div class="empty">${ic("celebration")}Everyone already holds their fair share — nothing to transfer.</div>` : "")}
 
     ${computed.rows.length ? `<button class="btn" onclick="submitSettlement()">${ic("check")}Record settlement</button>` : ""}
   `;
   Shell("Settlement", fmtMonth(period), html);
+  computed.transfers.forEach((t,idx) => refreshTransferNote(idx));
 };
+function toggleTransferPaid(idx){
+  const checkbox = document.getElementById("transfer-paid-"+idx);
+  const wrap = document.getElementById("transfer-amount-wrap-"+idx);
+  const input = document.getElementById("transfer-"+idx);
+  if (checkbox.checked){
+    input.disabled = false;
+    input.value = input.dataset.suggested;
+  } else {
+    input.disabled = true;
+    input.value = "0";
+  }
+  wrap.style.opacity = checkbox.checked ? "1" : ".5";
+  refreshTransferNote(idx);
+}
+function refreshTransferNote(idx){
+  const note = document.getElementById("transfer-note-"+idx);
+  const input = document.getElementById("transfer-"+idx);
+  if (!note || !input) return;
+  const suggested = Number(input.dataset.suggested)||0;
+  const actual = Number(input.value)||0;
+  const remaining = suggested - actual;
+  note.textContent = remaining > 0.004 ? `${fmtMoney(remaining)} still owed — carries forward to next month` : "";
+}
 async function submitSettlement(){
   const computed = State._lastSettlement;
   const transferAmounts = {};
   computed.transfers.forEach((t, idx) => { transferAmounts[idx] = document.getElementById("transfer-"+idx).value; });
   if (!confirm(`Record settlement for ${fmtMonth(computed.period)}? This marks the underlying cash as settled and updates each partner's carried balance.`)) return;
   await Repo.recordSettlement(computed.period, computed, transferAmounts);
-  toast("Settlement recorded");
+  const unpaidCount = computed.transfers.filter((t, idx) => (Number(transferAmounts[idx])||0) < t.amount - 0.004).length;
+  toast(unpaidCount ? `Settlement recorded — ${unpaidCount} transfer${unpaidCount===1?"":"s"} still owed` : "Settlement recorded — all transfers paid");
   goTab("cash");
 }
 
@@ -2191,7 +2302,7 @@ Object.assign(window, {
   saveReceiver, removeReceiver, importBackup,
   openSnapshotModal, renderSnapshotPreview, downloadSnapshot, shareSnapshot,
   openAddPayment, apToggleRepair, apReceiptChosen, apShowMultiSplit, apShowSingleReceiver, apAddSplitRow, apRefreshSplitSum, submitAddPayment,
-  openTxnDetail, openEditTxn, openEditPayment, submitEditPayment, openEditAdjustment, submitEditAdjustment, voidTxnConfirm, deleteTxnPermanentlyConfirm, submitSettlement, Repo, State
+  openTxnDetail, openEditTxn, openEditPayment, submitEditPayment, openEditAdjustment, submitEditAdjustment, voidTxnConfirm, deleteTxnPermanentlyConfirm, submitSettlement, toggleTransferPaid, refreshTransferNote, Repo, State
 });
 
 // ---------- init ----------
