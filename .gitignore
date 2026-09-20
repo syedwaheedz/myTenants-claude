@@ -1,0 +1,13 @@
+node_modules/
+android_www/
+
+# Android build outputs (the android/ project itself is committed)
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/*.keystore
+android/*.jks
+
+# local Supabase config (see supabase/README)
+config.js

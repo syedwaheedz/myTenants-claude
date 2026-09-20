@@ -1,0 +1,19 @@
+{
+  "name": "mytenants",
+  "version": "1.0.0",
+  "private": true,
+  "description": "myTenants — Android shell (Capacitor) around the static index.html web app",
+  "scripts": {
+    "build:android-www": "node scripts/build-android-www.js",
+    "android:sync": "npm run build:android-www && npx cap sync android"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.3",
+    "@capacitor/share": "^6.0.3"
+  }
+}

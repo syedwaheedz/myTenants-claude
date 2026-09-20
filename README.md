@@ -61,13 +61,14 @@ depending on the launcher's icon shape, so both need to stay in
 (buttons, chips, charts) is unrelated and stays the muted teal it's
 always been — only the icon and header branding use pink.
 
-## Installing it as an app on Android (instead of a native APK)
+## Installing it as an app on Android
 
-There's no Android SDK or build toolchain involved — `manifest.json`,
+Two ways to get this onto an Android phone, same underlying `index.html`
+either way:
+
+**As a PWA (no APK, no signing, always up to date)** — `manifest.json`,
 `sw.js`, and the two icon files in `icons/` turn this into an installable
-**Progressive Web App**, which is the simplest way to get something that
-behaves like a real app on a phone without setting up Android Studio,
-Gradle, or an app store listing:
+Progressive Web App with zero Android SDK/toolchain involved:
 
 1. Open the GitHub Pages URL in Chrome on Android.
 2. Tap the **⋮** menu → **Install app** (or **Add to Home screen** on
@@ -75,21 +76,87 @@ Gradle, or an app store listing:
 3. It installs with the teal "m" icon, opens full-screen with no browser
    address bar, and even keeps working with no signal (the app shell is
    cached; your actual data was always local to the browser anyway, per
-   the section below).
+   the section below — see also **Cloud Sync**, further down, for the
+   fix to that).
 
 To share it with someone else: just send them the link — there's nothing
 to sideload, no "install from unknown sources" warning to click through,
 and everyone always opens the same up-to-date version. iPhones get the
 same result via Safari's **Share → Add to Home Screen**.
 
-If you specifically need a literal installable `.apk` file (e.g. to send
-over WhatsApp with no link, or list on an app store), the standard route
-is Google's free [PWABuilder.com](https://www.pwabuilder.com) — paste in
-the Pages URL and it packages this same manifest into a signed Android
-package. That step needs to happen on a machine with internet access;
-it's not something achievable in this sandbox (no Android SDK, and the
-network here is locked down to a small allowlist that doesn't include
-Google's package-signing services).
+**As a real installable `.apk`** — see **Building the standalone Android
+app** below. Every stable release is published as a signed APK on this
+repo's [GitHub Releases](../../releases) page, built automatically by CI
+from this same `index.html`.
+
+## Building the standalone Android app
+
+The `android/` folder is a real Capacitor-generated Gradle project that wraps
+this same `index.html`/`manifest.json`/`icons/` — no UI rewrite, same code,
+just a native shell (see `capacitor.config.json`). Requires Node.js, a JDK,
+and the Android SDK locally:
+
+```
+npm install
+npm run android:sync     # copies index.html etc. into android_www/ and runs `cap sync`
+cd android
+./gradlew assembleDebug  # unsigned debug APK, for local testing
+# or open the android/ folder in Android Studio and hit Run
+```
+
+`sw.js` (the PWA service worker) is intentionally left out of the native
+build — a WebView shell has no separate browser tab to keep alive offline,
+so it isn't needed there. Everything else — screens, IndexedDB storage,
+business rules — behaves identically inside the app.
+
+A few web features don't work unmodified inside an Android WebView
+(`<a download>` and the Web Share API aren't supported there), so **backup
+export** and the **monthly snapshot** download/share buttons detect the
+native shell and use `@capacitor/filesystem` + `@capacitor/share` instead —
+see `isNativeApp()`/`nativeSaveAndShare()` in `index.html`. Restoring a
+backup (the file picker) works unchanged in both.
+
+## Release process (CI/CD)
+
+Two GitHub Actions workflows handle the Android build, independent of the
+existing `jekyll-gh-pages.yml` web deploy:
+
+- **`.github/workflows/android-ci.yml`** — runs on every pull request into
+  `main`, builds an unsigned debug APK as a sanity check. Nothing is
+  published; it just fails the PR if the native build is broken.
+- **`.github/workflows/android-release.yml`** — runs on every push to
+  `main` (i.e. right after a PR merges). It compares the `version` in
+  `version.json` against the latest git tag:
+  - **Unchanged** → no-op, nothing is tagged or released.
+  - **Bumped** → builds a signed release APK, tags the commit `vX.Y.Z`, and
+    publishes it as a GitHub Release with an auto-generated changelog and
+    the APK attached.
+
+So a "stable release" is any PR that bumps `version.json` as part of its
+change — that's the deliberate signal that a merge should ship, as opposed
+to routine merges that only need the CI build check.
+
+### One-time setup: signing keystore
+
+The release workflow needs a real Android signing keystore to sign the
+APK. Generate one once, locally (needs a JDK):
+
+```
+keytool -genkeypair -v -keystore mytenants-release.keystore \
+  -alias mytenants -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Keep `mytenants-release.keystore` somewhere safe and **never commit it** —
+if it's lost, future releases can't be signed with the same identity, and
+if it leaks, anyone can sign an app claiming to be an update to yours. Add
+these as **repo secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 mytenants-release.keystore` (its output) |
+| `ANDROID_KEYSTORE_PASSWORD` | the keystore password you set above |
+| `ANDROID_KEY_ALIAS` | `mytenants` (or whatever `-alias` you used) |
+| `ANDROID_KEY_PASSWORD` | the key password you set above |
 
 ## Data & backup — read this before real use
 
