@@ -27,6 +27,13 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Override the action's default packages list: it includes the
+          # legacy "tools" bundle, which Google has removed from the SDK
+          # repository, so the step fails before anything else runs. Gradle/
+          # AGP auto-downloads the actual platform + build-tools it needs
+          # during the build itself once licenses are accepted.
+          packages: platform-tools
 
       - name: Install dependencies
         run: npm ci

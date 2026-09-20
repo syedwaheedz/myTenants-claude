@@ -57,6 +57,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # See android-ci.yml — the action's default "tools" package is
+          # discontinued upstream and fails the step outright.
+          packages: platform-tools
 
       - name: Install dependencies
         run: npm ci
