@@ -427,6 +427,27 @@ function get(store, id){ return new Promise((res,rej)=>{ const t=_db.transaction
 function put(store, obj){ return tx(store,"readwrite", s => s.put(obj)); }
 function del(store, id){ return tx(store,"readwrite", s => s.delete(id)); }
 
+// ---- Native file save/share (Capacitor Android shell only) ----
+// The Android WebView doesn't support <a download> for blob/data URLs or the
+// Web Share API, so file-producing features (backup export, snapshot PNG)
+// branch to Capacitor's Filesystem+Share plugins when running as the native
+// app. Everything falls through to the existing web code otherwise.
+function isNativeApp(){ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
+function blobToBase64(blob){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+async function nativeSaveAndShare(filename, blob, title){
+  const { Filesystem, Share } = window.Capacitor.Plugins;
+  const data = await blobToBase64(blob);
+  const { uri } = await Filesystem.writeFile({ path: filename, data, directory: "CACHE" });
+  await Share.share({ title: title||filename, url: uri });
+}
+
 // =====================================================================
 // Repository — every business rule lives here (the "backend" layer).
 // Screens never touch IndexedDB directly, only through these methods.
@@ -1096,9 +1117,14 @@ const Repo = {
     dump._exported_at = new Date().toISOString();
     dump._version = DB_VERSION;
     const blob = new Blob([JSON.stringify(dump, null, 2)], {type:"application/json"});
+    const filename = `mytenants-backup-${todayISO()}.json`;
+    if (isNativeApp()){
+      await nativeSaveAndShare(filename, blob, "myTenants backup");
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `mytenants-backup-${todayISO()}.json`;
+    a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   },
@@ -2055,18 +2081,33 @@ function truncateCanvasText(ctx, text, maxWidth){
 function downloadSnapshot(){
   const canvas = document.getElementById("snap-canvas");
   if (!canvas) return;
+  const filename = `mytenants-${State.snapshotMonth||monthKey()}.png`;
+  if (isNativeApp()){
+    canvas.toBlob(async (blob) => {
+      if (!blob) return;
+      await nativeSaveAndShare(filename, blob, "myTenants monthly snapshot");
+      toast("Snapshot saved");
+    }, "image/png");
+    return;
+  }
   const url = canvas.toDataURL("image/png");
   const a = document.createElement("a");
-  a.href = url; a.download = `mytenants-${State.snapshotMonth||monthKey()}.png`;
+  a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   toast("Snapshot downloaded");
 }
 async function shareSnapshot(){
   const canvas = document.getElementById("snap-canvas");
   if (!canvas) return;
+  const filename = `mytenants-${State.snapshotMonth||monthKey()}.png`;
   canvas.toBlob(async (blob) => {
     if (!blob) return;
-    const file = new File([blob], `mytenants-${State.snapshotMonth||monthKey()}.png`, {type:"image/png"});
+    if (isNativeApp()){
+      try{ await nativeSaveAndShare(filename, blob, "myTenants monthly snapshot"); }
+      catch(e){ /* user cancelled the share sheet */ }
+      return;
+    }
+    const file = new File([blob], filename, {type:"image/png"});
     try{
       if (navigator.canShare && navigator.canShare({files:[file]})){
         await navigator.share({files:[file], title:"myTenants monthly snapshot"});
