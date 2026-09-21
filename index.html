@@ -972,6 +972,35 @@ const Repo = {
   },
   async settlementHistory(){ return (await getAll("partner_settlements")).sort((a,b)=>b.date.localeCompare(a.date)); },
   async transferHistory(){ return (await getAll("partner_transfers")).sort((a,b)=>b.date.localeCompare(a.date)); },
+  // A manual correction between two partners' running balances — e.g. a debt
+  // carried over from before this app tracked settlements, or a transfer that
+  // happened outside a normal settlement round. Reuses the same
+  // partner_transfers ledger a computed settlement writes to (period: null,
+  // manual: true marks it apart from a real settlement's transfers) so it
+  // shows up in Settlement history alongside everything else, fully
+  // auditable, rather than silently overwriting a partner's running_balance
+  // with no record of why. Takes effect immediately (no partial-payment
+  // step like a computed settlement's transfers) since it's just recording
+  // what's already true, not something to be collected later.
+  async recordManualTransfer({from_partner_id, to_partner_id, amount, note, date}){
+    amount = Number(amount)||0;
+    if (!amount || amount < 0) throw new Error("Enter a positive amount");
+    if (from_partner_id === to_partner_id) throw new Error("Pick two different partners");
+    const from = await get("partners", from_partner_id); if(!from) throw new Error("Partner not found");
+    const to = await get("partners", to_partner_id); if(!to) throw new Error("Partner not found");
+    from.running_balance = (from.running_balance||0) - amount;
+    to.running_balance = (to.running_balance||0) + amount;
+    await put("partners", from);
+    await put("partners", to);
+    const txn = {
+      id: uid(), period: null, date: date||todayISO(),
+      from_partner_id, from_name: from.name, to_partner_id, to_name: to.name,
+      suggested_amount: amount, paid_amount: amount, remaining_amount: 0, status: "paid",
+      note: note||"", manual: true
+    };
+    await put("partner_transfers", txn);
+    return txn;
+  },
 
 
   // ---- Reporting ----
@@ -1639,7 +1668,8 @@ Screens.transferHistory = async function(){
     ${transfers.length ? transfers.map(t => `
       <div class="card">
         <div class="row"><span class="name">${esc(t.from_name)} ${ic("arrow_forward")} ${esc(t.to_name)}</span>${statusChipForTransfer(t.status)}</div>
-        <div class="meta">${esc(fmtMonth(t.period))} settlement · recorded ${fmtDate(t.date)}</div>
+        <div class="meta">${t.manual ? "Manual adjustment" : esc(fmtMonth(t.period))+" settlement"} · recorded ${fmtDate(t.date)}</div>
+        ${t.manual && t.note ? `<div class="meta" style="margin-top:2px;">${esc(t.note)}</div>` : ""}
         <div class="row" style="margin-top:6px;"><span class="meta">Transferred</span><span class="num">${fmtMoney(t.paid_amount)} of ${fmtMoney(t.suggested_amount)}</span></div>
         ${t.remaining_amount>0.004 ? `<div class="meta" style="margin-top:2px;color:var(--due);font-weight:600;">${fmtMoney(t.remaining_amount)} still owed — carried forward</div>` : ""}
       </div>
@@ -1864,6 +1894,7 @@ Screens.partners = async function(){
         </div>
       </div>`).join("") : `<div class="empty">${ic("groups")}<div class="big">No partners yet</div>Add each profit-sharing partner and their share %.</div>`}
     <button class="btn secondary" onclick="openModal('addPartner')">${ic("add")}Add partner</button>
+    ${partners.length>=2 ? `<button class="btn ghost" style="margin-top:8px;" onclick="openModal('manualTransfer')">${ic("swap_horiz")}Record a manual adjustment between partners</button>` : ""}
 
     <div class="section-title">${ic("person_pin")}Receivers</div>
     <div class="meta" style="margin-bottom:10px;">People who physically collect cash and report it into a partner's pool.</div>
@@ -2252,6 +2283,41 @@ Modals.editPartner = async (id, root) => {
 async function updatePartnerSave(id){
   await Repo.updatePartner(id, {name:document.getElementById("m-name").value.trim(), share_percent:Number(document.getElementById("m-share").value)||0, running_balance:Number(document.getElementById("m-bal").value)||0});
   closeModal(); render();
+}
+
+Modals.manualTransfer = async (_, root) => {
+  const partners = await Repo.allPartners();
+  const partnerOption = (p) => `<option value="${p.id}">${esc(p.name)} (bal ${fmtMoney(p.running_balance)})</option>`;
+  root.innerHTML = modalShell("Manual adjustment between partners", `
+    <div class="meta" style="margin-bottom:10px;">For a debt or transfer that isn't from a computed settlement — e.g. one partner owing the other from before this app, or a side transfer. Updates both partners' running balance right away and shows up in Settlement history.</div>
+    <label>Owes (from)</label>
+    <select id="mt-from">${partners.map(partnerOption).join("")}</select>
+    <label>Owed to (to)</label>
+    <select id="mt-to">${partners.map(partnerOption).join("")}</select>
+    <label>Amount</label>
+    <input id="mt-amount" type="number" step="0.01" placeholder="e.g. 15000">
+    <label>Note (optional)</label>
+    <input id="mt-note" type="text" placeholder="e.g. Carried over from last settlement">
+    <label>Date</label>
+    <input id="mt-date" type="date" value="${todayISO()}">
+    <button class="btn" style="margin-top:16px;" onclick="submitManualTransfer()">${ic("check")}Record adjustment</button>
+  `);
+};
+async function submitManualTransfer(){
+  const from_partner_id = document.getElementById("mt-from").value;
+  const to_partner_id = document.getElementById("mt-to").value;
+  const amount = document.getElementById("mt-amount").value;
+  const note = document.getElementById("mt-note").value.trim();
+  const date = document.getElementById("mt-date").value || todayISO();
+  if (!amount) return toast("Enter an amount");
+  if (from_partner_id === to_partner_id) return toast("Pick two different partners");
+  const fromName = document.getElementById("mt-from").selectedOptions[0].text;
+  const toName = document.getElementById("mt-to").selectedOptions[0].text;
+  if (!confirm(`Record that ${fromName} owes ${toName} ${fmtMoney(Number(amount)||0)}? This updates both partners' running balance immediately. It can't be undone from here — if it's wrong, record an equal and opposite adjustment to correct it.`)) return;
+  try{
+    await Repo.recordManualTransfer({from_partner_id, to_partner_id, amount, note, date});
+    closeModal(); toast("Adjustment recorded"); render();
+  }catch(e){ toast(e.message); }
 }
 
 Modals.addReceiver = async (_, root) => {

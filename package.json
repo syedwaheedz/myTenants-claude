@@ -5,7 +5,8 @@
   "description": "myTenants — Android shell (Capacitor) around the static index.html web app",
   "scripts": {
     "build:android-www": "node scripts/build-android-www.js",
-    "android:sync": "npm run build:android-www && npx cap sync android"
+    "android:sync": "npm run build:android-www && npx cap sync android",
+    "test": "node --test tests/*.test.js"
   },
   "devDependencies": {
     "@capacitor/android": "^6.2.0",
@@ -14,7 +15,8 @@
     "@capacitor/cli": "^6.2.0",
     "@capacitor/core": "^6.2.0",
     "@capacitor/filesystem": "^6.0.3",
-    "@capacitor/share": "^6.0.3"
+    "@capacitor/share": "^6.0.3",
+    "playwright": "^1.63.0"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0"
