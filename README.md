@@ -407,13 +407,15 @@ regardless of font loading or screen size.
 On a property's tenant list, a small **Overall / This month** toggle
 switches between the usual running-balance chip and a specific month's
 collection status: **Paid**, **Partial**, or **Due**, with a quick summary
-count above the list. The rule, to keep it unambiguous: a month is Paid if
-payments *dated in that month* add up to at least one month's rent,
-Partial if something but less, Due if nothing. This deliberately answers
-"did we collect this month" rather than doing a strict oldest-debt-first
-allocation — an advance payment counts toward the month it's recorded in,
-not a future one. The overall running balance (used by Defaulters and the
-ledger) is unaffected and remains the accurate oldest-debt-first figure.
+count above the list. The rule follows the same oldest-debt-first logic
+as the running balance: any arrears carried in from before the month
+(computed from the full transaction history up to that cutoff) are paid
+off first, and only what's left over counts toward the current month's
+rent. A month is Paid if that leftover covers the full rent, Partial if
+it covers some of it, Due if nothing's left after old arrears are
+settled — so a tenant who pays exactly this month's rent while still
+owing from before still shows as Due (or Partial), not Paid. Dashboard,
+Defaulters, the PDF report, and this toggle all agree on this figure.
 Archived (moved-out) tenants still show for months they were active,
 tagged "(moved out)".
 

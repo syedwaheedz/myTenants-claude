@@ -1059,24 +1059,47 @@ const Repo = {
     }
     return total;
   },
-  // A single tenant's collection status for one specific month: did payments
-  // *dated in that month* cover at least a full month's rent? This answers
-  // "did we collect from them this month" — simpler and more scannable than a
-  // strict oldest-debt-first allocation, which is what Defaulters/the ledger
-  // already show. An advance payment counts toward the month it's recorded in.
+  // A single tenant's collection status for one specific month. A payment
+  // dated this month is applied oldest-debt-first: it settles whatever was
+  // still owed from BEFORE this month started before any of it can count
+  // toward this month's own rent. So a tenant who pays exactly one month's
+  // rent while still carrying old arrears shows as still Due (that payment
+  // was needed to catch up on the past, not to cover the present) — not
+  // "Paid", which was the bug: raw payments-dated-this-month were compared
+  // straight against this month's due, so catching up on old debt could
+  // read as this month being fully paid even while genuinely unpaid.
   monthlyTenantStatusFromTxns(tenant, mk, txnsForTenant){
     const startMk = monthKey(tenant.start_date);
     if (mk < startMk) return null; // wasn't a tenant yet
+
+    const prevMk = addMonths(mk, -1);
+    let priorArrears = 0;
+    if (prevMk >= startMk){
+      let cumDue = 0, cursor = startMk;
+      while (cursor <= prevMk){ cumDue += rentRateForMonth(tenant, cursor); cursor = addMonths(cursor, 1); }
+      const cutoff = prevMk + "-31";
+      let cumPaid = 0;
+      for (const x of txnsForTenant){
+        if (x.is_voided || x.date > cutoff) continue;
+        if (x.type === "RENT_PAYMENT") cumPaid += (x.total_amount + x.repair_amount);
+        else if (x.type === "ADJUSTMENT") cumDue += (x.adjustment_amount||0);
+      }
+      priorArrears = cumDue - cumPaid;
+    }
+
     const due = rentRateForMonth(tenant, mk);
     const paid = txnsForTenant
       .filter(x => !x.is_voided && x.type === "RENT_PAYMENT" && monthKey(x.date) === mk)
       .reduce((s,x) => s + x.total_amount + x.repair_amount, 0);
+    // Settle prior arrears first; only the remainder can apply to this month.
+    const appliedToCurrentMonth = Math.max(0, Math.min(paid - Math.max(0, priorArrears), due));
+
     let status;
     if (due <= 0) status = "paid";
-    else if (paid >= due - 0.005) status = "paid";
-    else if (paid > 0.005) status = "partial";
+    else if (appliedToCurrentMonth >= due - 0.005) status = "paid";
+    else if (appliedToCurrentMonth > 0.005) status = "partial";
     else status = "due";
-    return { status, paid, due };
+    return { status, paid, due, priorArrears, appliedToCurrentMonth };
   },
   // Monthly status for every tenant across the whole portfolio (or one property),
   // used by both the per-property monthly view and the dashboard snapshot.
@@ -1094,8 +1117,10 @@ const Repo = {
       .filter(Boolean)
       .sort((a,b)=>a.tenant.name.localeCompare(b.tenant.name));
   },
-  // Per-property rollup for a given month: counts + cash collected, for the
-  // dashboard snapshot's "by property" section.
+  // Per-property rollup for a given month: counts + cash applied to that
+  // month's rent (after old arrears are settled first), for the dashboard
+  // snapshot's "by property" section — kept consistent with the paid/
+  // partial/due counts shown right next to it.
   async monthlyPropertyBreakdown(mk){
     const [properties, statuses] = await Promise.all([this.allProperties(), this.monthlyStatusForAllTenants(mk)]);
     return properties.map(p => {
@@ -1106,7 +1131,7 @@ const Repo = {
         paid: rows.filter(r=>r.status==="paid").length,
         partial: rows.filter(r=>r.status==="partial").length,
         due: rows.filter(r=>r.status==="due").length,
-        collected: rows.reduce((s,r)=>s+r.paid,0)
+        collected: rows.reduce((s,r)=>s+r.appliedToCurrentMonth,0)
       };
     }).filter(r=>r.total>0);
   },
@@ -1277,7 +1302,7 @@ Screens.dashboard = async function(){
   // tenant who overpays to clear old arrears (paid > due for THIS month)
   // inflates the total even while other tenants have paid nothing, which
   // let this show 100% collected while several tenants were still due.
-  const collectedTowardThisMonth = monthlyStatuses.reduce((s,r)=>s+Math.min(r.paid, r.due),0);
+  const collectedTowardThisMonth = monthlyStatuses.reduce((s,r)=>s+r.appliedToCurrentMonth,0);
   const pctCollected = dueThisMonth>0.004 ? Math.round((collectedTowardThisMonth/dueThisMonth)*100) : (collectedTowardThisMonth>0.004?100:0);
   const html = `
     <div class="stat-grid">
@@ -1429,12 +1454,14 @@ function monthlyStatusChip(status){
 }
 function monthlyTenantCard(row){
   const t = row.tenant;
+  const owedBefore = row.priorArrears > 0.004;
+  const wentToOldDue = owedBefore ? Math.min(row.paid, row.priorArrears) : 0;
   return `
     <div class="card tap" onclick="openTenantLedger('${t.id}')">
       <div class="row">
         <div>
           <div class="name">${esc(t.name)}${t.archived?' <span class="meta">(moved out)</span>':""}</div>
-          <div class="meta">${fmtMoney(row.paid)} of ${fmtMoney(row.due)} this month</div>
+          <div class="meta">${fmtMoney(row.appliedToCurrentMonth)} of ${fmtMoney(row.due)} this month${wentToOldDue>0.004?` · ${fmtMoney(wentToOldDue)} went to old dues first`:""}</div>
         </div>
         ${monthlyStatusChip(row.status)}
       </div>
@@ -1731,10 +1758,10 @@ async function cloudSyncCardHtml(){
           <button class="link-btn danger-link" onclick="confirmSignOutSync()">${ic("logout")}Sign out</button>
         </div>
       ` : `
-        <div class="meta" style="margin:10px 0;">Sign in to keep this data in sync across your devices. Skip this and the app keeps working exactly as it does now, purely on this device.</div>
+        <div class="meta" style="margin:10px 0;">Confirm your email address to keep this data in sync across your devices. We'll email you a link to tap — no password needed. Skip this and the app keeps working exactly as it does now, purely on this device.</div>
         <label>Email</label>
         <input id="sync-email" type="email" placeholder="you@example.com">
-        <button class="btn secondary" style="margin-top:10px;" onclick="submitSignIn()">${ic("mail")}Send magic link</button>
+        <button class="btn secondary" style="margin-top:10px;" onclick="submitSignIn()">${ic("mail")}Confirm email address</button>
       `}
     </div>
   `;
@@ -1742,8 +1769,8 @@ async function cloudSyncCardHtml(){
 async function submitSignIn(){
   const email = document.getElementById("sync-email").value.trim();
   if (!email) return toast("Enter an email address");
-  try{ await signInWithEmail(email); toast("Check your email for the sign-in link"); }
-  catch(e){ toast(e.message || "Couldn't send the sign-in link"); }
+  try{ await signInWithEmail(email); toast("Check your email and tap the link to confirm"); }
+  catch(e){ toast(e.message || "Couldn't send the confirmation link"); }
 }
 async function manualSyncNow(){
   if (!navigator.onLine){ toast("You're offline — nothing to sync right now"); return; }
@@ -2552,12 +2579,12 @@ function buildMonthlyReportHtml(data){
   const propertySections = data.propertyDetail.length ? data.propertyDetail.map(p => `
     <div class="r-section-title">Property detail — ${esc(p.name)}</div>
     <table>
-      <tr><th>Tenant</th><th class="r-num">Monthly rent</th><th class="r-num">Paid this month</th><th>Status</th></tr>
+      <tr><th>Tenant</th><th class="r-num">Monthly rent</th><th class="r-num">Applied to this month</th><th>Status</th></tr>
       ${p.rows.map(r => `
         <tr>
           <td>${esc(r.tenant.name)}${r.tenant.archived?" (moved out)":""}</td>
           <td class="r-num">${fmtMoney(r.due)}</td>
-          <td class="r-num">${fmtMoney(r.paid)}</td>
+          <td class="r-num">${fmtMoney(r.appliedToCurrentMonth)}</td>
           <td><span class="r-pill ${r.status}">${r.status==="paid"?"Paid":r.status==="partial"?"Partial":"Due"}</span></td>
         </tr>`).join("")}
     </table>`).join("") : `<div class="r-empty">No properties with tenants yet.</div>`;
