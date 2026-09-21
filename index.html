@@ -1182,18 +1182,29 @@ const Repo = {
       };
     }).filter(r=>r.total>0);
   },
-  async recentTransactions(limit=8){
+  // Every transaction, newest first, with its tenant/property/receiver
+  // details attached — the shared source for both the Dashboard's short
+  // "Recent activity" list and the full Transaction history screen.
+  async allTransactionsDetailed(){
     const [txns, tenants, properties, splits, receivers] = await Promise.all([
       getAll("transactions"), getAll("tenants"), this.allProperties(), getAll("transaction_splits"), this.allReceivers()
     ]);
     const tById = Object.fromEntries(tenants.map(t=>[t.id,t]));
     const pById = Object.fromEntries(properties.map(p=>[p.id,p]));
     const receiverById = Object.fromEntries(receivers.map(r=>[r.id,r]));
-    return txns.sort((a,b)=>b.date.localeCompare(a.date) || (b.id>a.id?1:-1)).slice(0,limit)
-      .map(x=>({
-        ...x, tenant:tById[x.tenant_id], property:pById[x.property_id],
-        receivedByNames: splits.filter(s=>s.transaction_id===x.id).map(s=>receiverById[s.receiver_id]?.name).filter(Boolean)
-      }));
+    return txns.sort((a,b)=>b.date.localeCompare(a.date) || (b.id>a.id?1:-1))
+      .map(x=>{
+        const mySplits = splits.filter(s=>s.transaction_id===x.id);
+        return {
+          ...x, tenant:tById[x.tenant_id], property:pById[x.property_id],
+          receivedByNames: mySplits.map(s=>receiverById[s.receiver_id]?.name).filter(Boolean),
+          receiverIds: mySplits.map(s=>s.receiver_id),
+          isSettled: mySplits.length>0 && mySplits.every(s=>s.settled_at),
+        };
+      });
+  },
+  async recentTransactions(limit=8){
+    return (await this.allTransactionsDetailed()).slice(0,limit);
   },
   async allTenantsWithProperty(){
     const [tenants, properties] = await Promise.all([getAll("tenants"), this.allProperties()]);
@@ -1333,6 +1344,24 @@ function statusChip(balance){
 
 // ---------- Dashboard ----------
 const Screens = {};
+// Shared row markup for a single transaction — used by both the Dashboard's
+// short "Recent activity" list and the full Transaction history screen, so
+// they never visually drift apart.
+function txRowHtml(x){
+  const isAdj = x.type === "ADJUSTMENT";
+  const amt = isAdj ? (x.adjustment_amount||0) : x.total_amount;
+  return `
+    <div class="list-row tap" onclick="openTxnDetail('${x.id}')">
+      <div class="card-icon" style="${isAdj?'':'background:var(--paid-bg);color:var(--paid);'}">${ic(isAdj?"tune":"payments")}</div>
+      <div class="lr-main">
+        <div class="name">${esc(x.tenant?x.tenant.name:"—")}${x.is_voided?' <span class="chip due">Voided</span>':""}</div>
+        <div class="meta">${isAdj?"Balance adjustment · ":""}${esc(x.property?x.property.name:"")} · ${fmtDate(x.date)}${x.receivedByNames&&x.receivedByNames.length?` · via ${esc(x.receivedByNames.join(", "))}`:""}</div>
+      </div>
+      <div class="amt num" style="color:${isAdj && amt<0 ? 'var(--paid)' : 'inherit'};">${amt<0&&isAdj?"−":""}${fmtMoney(Math.abs(amt))}</div>
+      <span class="msi chevron">chevron_right</span>
+    </div>`;
+}
+function txAmountAbs(x){ return Math.abs(x.type==="ADJUSTMENT" ? (x.adjustment_amount||0) : (x.total_amount||0)); }
 Screens.dashboard = async function(){
   const [arrears, collected, recent, portfolio, trend, arrearsByProp, cashRows, monthlyStatuses, partners, defaulters] = await Promise.all([
     Repo.totalArrears(), Repo.totalCollectedThisMonth(), Repo.recentTransactions(6),
@@ -1439,24 +1468,12 @@ Screens.dashboard = async function(){
     </div>
     ` : ""}
 
-    <div class="section-title">${ic("history")}Recent activity</div>
+    <div class="section-title" style="justify-content:space-between;">
+      <span style="display:flex;align-items:center;gap:6px;">${ic("history")}Recent activity</span>
+      ${recent.length ? `<button class="link-btn" onclick="goTab('transactionHistory')">See all</button>` : ""}
+    </div>
     ${recent.length ? `
-    <div class="list-card">
-      ${recent.map(x=>{
-        const isAdj = x.type === "ADJUSTMENT";
-        const amt = isAdj ? (x.adjustment_amount||0) : x.total_amount;
-        return `
-        <div class="list-row tap" onclick="openTxnDetail('${x.id}')">
-          <div class="card-icon" style="${isAdj?'':'background:var(--paid-bg);color:var(--paid);'}">${ic(isAdj?"tune":"payments")}</div>
-          <div class="lr-main">
-            <div class="name">${esc(x.tenant?x.tenant.name:"—")}${x.is_voided?' <span class="chip due">Voided</span>':""}</div>
-            <div class="meta">${isAdj?"Balance adjustment · ":""}${esc(x.property?x.property.name:"")} · ${fmtDate(x.date)}${x.receivedByNames&&x.receivedByNames.length?` · via ${esc(x.receivedByNames.join(", "))}`:""}</div>
-          </div>
-          <div class="amt num" style="color:${isAdj && amt<0 ? 'var(--paid)' : 'inherit'};">${amt<0&&isAdj?"−":""}${fmtMoney(Math.abs(amt))}</div>
-          <span class="msi chevron">chevron_right</span>
-        </div>`;
-      }).join("")}
-    </div>` : `<div class="empty">${ic("receipt_long")}<div class="big">No payments recorded yet</div>Tap "Add payment" to log the first one.</div>`}
+    <div class="list-card">${recent.map(txRowHtml).join("")}</div>` : `<div class="empty">${ic("receipt_long")}<div class="big">No payments recorded yet</div>Tap "Add payment" to log the first one.</div>`}
   `;
   Shell("myTenants", "Dashboard", html, {
     logoImg: "icons/header-logo.png",
@@ -1467,6 +1484,106 @@ Screens.dashboard = async function(){
     </div>`
   });
 };
+
+// ---------- Transaction history ----------
+Screens.transactionHistory = async function(){
+  const [properties, receivers] = await Promise.all([Repo.allProperties(), Repo.allReceivers()]);
+  const html = `
+    <button class="back-btn" onclick="goTab('dashboard')">${ic("arrow_back")}Dashboard</button>
+    <input id="tx-search" type="search" placeholder="Search tenant, property, note, receiver…" oninput="renderTxHistoryList()" style="margin-bottom:10px;">
+    <button class="btn ghost small" onclick="toggleTxFilters()">${ic("filter_list")}Filters</button>
+    <div id="tx-filters" class="card" style="display:none;margin-top:10px;">
+      <label>Status</label>
+      <select id="tx-filter-status" onchange="renderTxHistoryList()">
+        <option value="">All</option>
+        <option value="active">Active</option>
+        <option value="voided">Voided</option>
+      </select>
+      <label>Settlement</label>
+      <select id="tx-filter-settled" onchange="renderTxHistoryList()">
+        <option value="">All</option>
+        <option value="settled">Settled</option>
+        <option value="unsettled">Unsettled</option>
+      </select>
+      <label>Type</label>
+      <select id="tx-filter-type" onchange="renderTxHistoryList()">
+        <option value="">All</option>
+        <option value="RENT_PAYMENT">Payment</option>
+        <option value="ADJUSTMENT">Balance adjustment</option>
+      </select>
+      <label>Property</label>
+      <select id="tx-filter-property" onchange="renderTxHistoryList()">
+        <option value="">All properties</option>
+        ${properties.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}
+      </select>
+      <label>Received by</label>
+      <select id="tx-filter-receiver" onchange="renderTxHistoryList()">
+        <option value="">Anyone</option>
+        ${receivers.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}
+      </select>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;"><label>From date</label><input id="tx-filter-date-from" type="date" onchange="renderTxHistoryList()"></div>
+        <div style="flex:1;"><label>To date</label><input id="tx-filter-date-to" type="date" onchange="renderTxHistoryList()"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;"><label>Min amount</label><input id="tx-filter-amount-min" type="number" step="0.01" oninput="renderTxHistoryList()"></div>
+        <div style="flex:1;"><label>Max amount</label><input id="tx-filter-amount-max" type="number" step="0.01" oninput="renderTxHistoryList()"></div>
+      </div>
+      <button class="link-btn" style="margin-top:6px;" onclick="clearTxFilters()">${ic("close")}Clear filters</button>
+    </div>
+    <div id="tx-history-list" style="margin-top:14px;"></div>
+  `;
+  Shell("Transaction history", null, html);
+  await renderTxHistoryList();
+};
+function toggleTxFilters(){
+  const el = document.getElementById("tx-filters");
+  if (el) el.style.display = el.style.display==="none" ? "block" : "none";
+}
+function clearTxFilters(){
+  for (const id of ["tx-filter-status","tx-filter-settled","tx-filter-type","tx-filter-property","tx-filter-receiver","tx-filter-date-from","tx-filter-date-to","tx-filter-amount-min","tx-filter-amount-max"]){
+    const el = document.getElementById(id); if (el) el.value = "";
+  }
+  return renderTxHistoryList();
+}
+async function renderTxHistoryList(){
+  const container = document.getElementById("tx-history-list");
+  if (!container) return;
+  const all = await Repo.allTransactionsDetailed();
+
+  const search = (document.getElementById("tx-search")?.value || "").trim().toLowerCase();
+  const status = document.getElementById("tx-filter-status")?.value || "";
+  const settled = document.getElementById("tx-filter-settled")?.value || "";
+  const type = document.getElementById("tx-filter-type")?.value || "";
+  const propertyId = document.getElementById("tx-filter-property")?.value || "";
+  const receiverId = document.getElementById("tx-filter-receiver")?.value || "";
+  const dateFrom = document.getElementById("tx-filter-date-from")?.value || "";
+  const dateTo = document.getElementById("tx-filter-date-to")?.value || "";
+  const amountMin = document.getElementById("tx-filter-amount-min")?.value;
+  const amountMax = document.getElementById("tx-filter-amount-max")?.value;
+
+  let rows = all;
+  if (search) rows = rows.filter(x => {
+    const hay = [x.tenant?.name, x.property?.name, x.note, ...(x.receivedByNames||[])].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(search);
+  });
+  if (status === "active") rows = rows.filter(x=>!x.is_voided);
+  if (status === "voided") rows = rows.filter(x=>x.is_voided);
+  if (settled === "settled") rows = rows.filter(x=>x.isSettled);
+  if (settled === "unsettled") rows = rows.filter(x=>!x.isSettled);
+  if (type) rows = rows.filter(x=>x.type===type);
+  if (propertyId) rows = rows.filter(x=>x.property_id===propertyId);
+  if (receiverId) rows = rows.filter(x=>(x.receiverIds||[]).includes(receiverId));
+  if (dateFrom) rows = rows.filter(x=>x.date >= dateFrom);
+  if (dateTo) rows = rows.filter(x=>x.date <= dateTo);
+  if (amountMin) rows = rows.filter(x=>txAmountAbs(x) >= Number(amountMin));
+  if (amountMax) rows = rows.filter(x=>txAmountAbs(x) <= Number(amountMax));
+
+  container.innerHTML = rows.length ? `
+    <div class="meta" style="margin-bottom:8px;">${rows.length} transaction${rows.length===1?"":"s"}</div>
+    <div class="list-card">${rows.map(txRowHtml).join("")}</div>
+  ` : `<div class="empty">${ic("search_off")}<div class="big">No matching transactions</div>Try adjusting your search or filters.</div>`;
+}
 
 // ---------- Properties ----------
 Screens.properties = async function(){

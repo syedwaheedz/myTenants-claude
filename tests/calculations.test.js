@@ -413,3 +413,55 @@ test("recordManualTransfer moves a retroactive debt between two partners' runnin
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+test("Transaction history: search and filters (status, type, receiver) narrow the list correctly", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const prop = await Repo.addProperty({ name: "Test Prop" });
+      const receiver = await Repo.addReceiver({ name: "Test Receiver" });
+      const t1 = await Repo.addTenant({ property_id: prop.id, name: "Alice", monthly_rent: 5000 });
+      const t2 = await Repo.addTenant({ property_id: prop.id, name: "Bob", monthly_rent: 6000 });
+      await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 5000, date: todayISO(), splits: [{ receiver_id: receiver.id, amount: 5000 }] });
+      await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 3000, date: todayISO() });
+      await Repo.recordBalanceAdjustment({ tenant_id: t2.id, amount: 1000, note: "old due", date: todayISO() });
+      const voided = await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 999, date: todayISO() });
+      await Repo.voidTransaction(voided.id);
+
+      await Screens.transactionHistory();
+      await new Promise(r => setTimeout(r, 60));
+      const countAll = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+
+      document.getElementById("tx-search").value = "Alice";
+      await renderTxHistoryList();
+      const countSearch = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+      document.getElementById("tx-search").value = "";
+
+      document.getElementById("tx-filter-status").value = "voided";
+      await renderTxHistoryList();
+      const countVoided = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+      document.getElementById("tx-filter-status").value = "";
+
+      document.getElementById("tx-filter-type").value = "ADJUSTMENT";
+      await renderTxHistoryList();
+      const countAdj = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+      document.getElementById("tx-filter-type").value = "";
+
+      document.getElementById("tx-filter-receiver").value = receiver.id;
+      await renderTxHistoryList();
+      const countReceiver = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+
+      await clearTxFilters();
+      const countCleared = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+
+      return { countAll, countSearch, countVoided, countAdj, countReceiver, countCleared };
+    });
+    assert.equal(result.countAll, 4, "all 4 recorded transactions should show with no filters");
+    assert.equal(result.countSearch, 2, "searching a tenant name should match their payments (including the voided one)");
+    assert.equal(result.countVoided, 1);
+    assert.equal(result.countAdj, 1);
+    assert.equal(result.countReceiver, 1);
+    assert.equal(result.countCleared, 4, "clearing filters should restore the full list");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
