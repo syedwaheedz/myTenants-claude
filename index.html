@@ -371,6 +371,8 @@ const monthKey = (d) => (d || todayISO()).slice(0,7); // "YYYY-MM"
 const fmtMoney = (n) => "₹" + (Math.round((n||0)*100)/100).toLocaleString("en-IN", {minimumFractionDigits: 0, maximumFractionDigits: 2});
 const fmtMonth = (mk) => { if(!mk) return "—"; const [y,m]=mk.split("-"); return new Date(y, m-1, 1).toLocaleDateString("en-IN",{month:"short",year:"numeric"}); };
 const fmtMonthShort = (mk) => { const [y,m]=mk.split("-"); return new Date(y, m-1, 1).toLocaleDateString("en-IN",{month:"short"}); };
+// A single month reads as "Sep 2026"; a genuine range reads as "Jul 2026 – Sep 2026".
+const fmtPeriodRange = (from, to) => (!to || from===to) ? fmtMonth(from) : `${fmtMonth(from)} – ${fmtMonth(to)}`;
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "—";
 const fmtDateTime = (d) => d ? new Date(d).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "—";
 const esc = (s) => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -898,7 +900,13 @@ const Repo = {
   // what each partner is entitled to (their share % of the period's pool, plus
   // whatever was left owing from before). The imbalance becomes a small set of
   // suggested partner-to-partner transfers rather than a single shared payout.
-  async computeSettlement(period){
+  // toPeriod defaults to fromPeriod for a single-month settlement (the
+  // common case); pass a later toPeriod to settle several consecutive
+  // months — e.g. catching up on a few months that never got settled —
+  // in one combined pass. Only ever touches *unsettled* splits, so a
+  // range that overlaps an already-settled month just contributes zero
+  // for that month rather than double-settling it.
+  async computeSettlement(fromPeriod, toPeriod = fromPeriod){
     const [receivers, splits, txns, properties, partners] = await Promise.all([
       this.allReceivers(), getAll("transaction_splits"), getAll("transactions"), this.allProperties(), this.allPartners()
     ]);
@@ -908,10 +916,12 @@ const Repo = {
       if (s.settled_at) return false;
       const t = txnById[s.transaction_id];
       if (!t || t.is_voided) return false;
-      return monthKey(t.date) === period;
+      const mk = monthKey(t.date);
+      return mk >= fromPeriod && mk <= toPeriod;
     });
     const grossCollected = relevantSplits.reduce((s,x)=>s+x.amount, 0);
-    const ownerRentTotal = properties.reduce((s,p)=>s+(Number(p.owner_rent_amount)||0), 0);
+    const monthsInRange = monthsBetween(fromPeriod, toPeriod) + 1;
+    const ownerRentTotal = properties.reduce((s,p)=>s+(Number(p.owner_rent_amount)||0), 0) * monthsInRange;
     const finalTotal = grossCollected - ownerRentTotal;
 
     const byPartner = {};
@@ -948,7 +958,10 @@ const Repo = {
       if (creditors[j].amount <= 0.004) j++;
     }
 
-    return { period, grossCollected, ownerRentTotal, finalTotal, unassigned, rows, transfers };
+    // `period` is kept (= fromPeriod when it's a single month, matching the
+    // old shape exactly) for every existing caller that only knows about a
+    // single period; fromPeriod/toPeriod are the new range-aware fields.
+    return { period: fromPeriod, fromPeriod, toPeriod, grossCollected, ownerRentTotal, finalTotal, unassigned, rows, transfers };
   },
   // transferAmounts: {transferIndex: amountActuallyMoved} — lets the person record a
   // partial transfer; whatever's left of each partner's net carries forward as their
@@ -956,6 +969,8 @@ const Repo = {
   async recordSettlement(period, computed, transferAmounts){
     const movement = {}; // partner_id -> net cash movement this round (received minus paid)
     const transferDate = todayISO();
+    const periodFrom = computed.fromPeriod || period;
+    const periodTo = computed.toPeriod || period;
     for (let idx = 0; idx < computed.transfers.length; idx++){
       const t = computed.transfers[idx];
       const paid = Number(transferAmounts[idx]) || 0;
@@ -965,8 +980,11 @@ const Repo = {
       const status = remaining <= 0.004 ? "paid" : (paid > 0.004 ? "partial" : "unpaid");
       // An explicit, permanent record of who was supposed to pay whom, how much
       // actually moved, and what's left — not just an update to a running number.
+      // period_from/period_to (equal to period for a single-month settlement)
+      // are what let Settlement history group a multi-month round together
+      // and show it as complete once every transfer in it is fully paid.
       await put("partner_transfers", {
-        id: uid(), period, date: transferDate,
+        id: uid(), period, period_from: periodFrom, period_to: periodTo, date: transferDate,
         from_partner_id: t.from_partner_id, from_name: t.from_name,
         to_partner_id: t.to_partner_id, to_name: t.to_name,
         suggested_amount: t.amount, paid_amount: paid, remaining_amount: Math.max(0, remaining),
@@ -976,7 +994,7 @@ const Repo = {
     for (const row of computed.rows){
       const closing = row.net - (movement[row.partner_id] || 0);
       await put("partner_settlements", {
-        id:uid(), partner_id: row.partner_id, period, share_amount: row.share,
+        id:uid(), partner_id: row.partner_id, period, period_from: periodFrom, period_to: periodTo, share_amount: row.share,
         opening_balance: row.opening_balance, collected: row.collected, net: row.net,
         closing_balance: closing, date: transferDate
       });
@@ -1257,7 +1275,9 @@ const Repo = {
   async reportPartnerSettlementSummary(mk){
     const [historyAll, partners] = await Promise.all([this.settlementHistory(), this.allPartners()]);
     const partnerById = Object.fromEntries(partners.map(p=>[p.id,p]));
-    const recorded = historyAll.filter(r => r.period === mk);
+    // period_from/period_to cover a multi-month settlement round; fall back
+    // to an exact match on `period` for older records that predate them.
+    const recorded = historyAll.filter(r => (r.period_from && r.period_to) ? (mk >= r.period_from && mk <= r.period_to) : r.period === mk);
     if (recorded.length){
       return { recorded: true, rows: recorded.map(r => ({
         name: partnerById[r.partner_id] ? partnerById[r.partner_id].name : "—",
@@ -1792,36 +1812,81 @@ Screens.cash = async function(){
 };
 
 Screens.transferHistory = async function(){
-  const transfers = await Repo.transferHistory();
+  const [transfers, settlements] = await Promise.all([Repo.transferHistory(), Repo.settlementHistory()]);
   const statusChipForTransfer = (status) => {
     if (status==="paid") return `<span class="chip paid">${ic("check_circle")}Paid</span>`;
     if (status==="partial") return `<span class="chip partial">${ic("hourglass_top")}Partial</span>`;
     return `<span class="chip due">${ic("schedule")}Unpaid</span>`;
   };
+  // Group the actual transfers into settlement "rounds" — everything one
+  // Record settlement call wrote shares the same period range and date —
+  // so a round covering several partners shows one combined status instead
+  // of scattered individual rows, and gets a "Settled" badge automatically
+  // once every transfer in it is fully paid (manual adjustments are always
+  // immediately "paid" on their own, so they're shown separately, ungrouped).
+  const manual = transfers.filter(t=>t.manual);
+  const roundKey = (r) => `${r.period_from||r.period}_${r.period_to||r.period}_${r.date}`;
+  const roundsMap = {};
+  for (const t of transfers.filter(t=>!t.manual)){
+    const key = roundKey(t);
+    (roundsMap[key] ||= { period_from:t.period_from||t.period, period_to:t.period_to||t.period, date:t.date, transfers:[] }).transfers.push(t);
+  }
+  // A round where everyone was already exactly even writes settlement rows
+  // but no transfers at all — without this, it would be invisible here even
+  // though the underlying cash really was marked settled.
+  for (const s of settlements){
+    const key = roundKey(s);
+    if (!roundsMap[key]) roundsMap[key] = { period_from:s.period_from||s.period, period_to:s.period_to||s.period, date:s.date, transfers:[] };
+  }
+  const rounds = Object.values(roundsMap);
+
+  const roundCardHtml = (round) => {
+    const allPaid = round.transfers.every(t=>t.status==="paid");
+    return `
+      <div class="card">
+        <div class="row"><span class="name">${esc(fmtPeriodRange(round.period_from, round.period_to))} settlement</span>${allPaid ? `<span class="chip paid">${ic("check_circle")}Settled</span>` : `<span class="chip partial">${ic("hourglass_top")}Partly paid</span>`}</div>
+        <div class="meta" style="margin-bottom:${round.transfers.length?'8px':'0'};">Recorded ${fmtDate(round.date)}</div>
+        ${round.transfers.length ? round.transfers.map(t => `
+          <div class="divider"></div>
+          <div class="row"><span class="meta">${esc(t.from_name)} ${ic("arrow_forward")} ${esc(t.to_name)}</span>${statusChipForTransfer(t.status)}</div>
+          <div class="row"><span class="meta">Transferred</span><span class="num">${fmtMoney(t.paid_amount)} of ${fmtMoney(t.suggested_amount)}</span></div>
+          ${t.remaining_amount>0.004 ? `<div class="meta" style="margin-top:2px;color:var(--due);font-weight:600;">${fmtMoney(t.remaining_amount)} still owed — carried forward</div>` : ""}
+        `).join("") : `<div class="meta">Everyone was already holding their fair share — nothing to transfer.</div>`}
+      </div>`;
+  };
+  const manualCardHtml = (t) => `
+    <div class="card">
+      <div class="row"><span class="name">${esc(t.from_name)} ${ic("arrow_forward")} ${esc(t.to_name)}</span>${statusChipForTransfer(t.status)}</div>
+      <div class="meta">Manual adjustment · recorded ${fmtDate(t.date)}</div>
+      ${t.note ? `<div class="meta" style="margin-top:2px;">${esc(t.note)}</div>` : ""}
+      <div class="row" style="margin-top:6px;"><span class="meta">Transferred</span><span class="num">${fmtMoney(t.paid_amount)} of ${fmtMoney(t.suggested_amount)}</span></div>
+    </div>`;
+
+  const allCards = [...rounds.map(r=>({date:r.date, html:roundCardHtml(r)})), ...manual.map(t=>({date:t.date, html:manualCardHtml(t)}))]
+    .sort((a,b)=>b.date.localeCompare(a.date))
+    .map(x=>x.html);
+
   const html = `
     <button class="back-btn" onclick="goTab('cash')">${ic("arrow_back")}Cash in hand</button>
-    ${transfers.length ? transfers.map(t => `
-      <div class="card">
-        <div class="row"><span class="name">${esc(t.from_name)} ${ic("arrow_forward")} ${esc(t.to_name)}</span>${statusChipForTransfer(t.status)}</div>
-        <div class="meta">${t.manual ? "Manual adjustment" : esc(fmtMonth(t.period))+" settlement"} · recorded ${fmtDate(t.date)}</div>
-        ${t.manual && t.note ? `<div class="meta" style="margin-top:2px;">${esc(t.note)}</div>` : ""}
-        <div class="row" style="margin-top:6px;"><span class="meta">Transferred</span><span class="num">${fmtMoney(t.paid_amount)} of ${fmtMoney(t.suggested_amount)}</span></div>
-        ${t.remaining_amount>0.004 ? `<div class="meta" style="margin-top:2px;color:var(--due);font-weight:600;">${fmtMoney(t.remaining_amount)} still owed — carried forward</div>` : ""}
-      </div>
-    `).join("") : `<div class="empty">${ic("swap_horiz")}<div class="big">No settlements recorded yet</div>Transfers between partners show up here once you record a settlement.</div>`}
+    ${allCards.length ? allCards.join("") : `<div class="empty">${ic("swap_horiz")}<div class="big">No settlements recorded yet</div>Transfers between partners show up here once you record a settlement.</div>`}
   `;
   Shell("Settlement history", `${transfers.length} transfer${transfers.length===1?"":"s"} recorded`, html);
 };
 
 // ---------- Settlement ----------
 Screens.settlement = async function(){
-  const period = State.settlementPeriod || monthKey();
-  const computed = await Repo.computeSettlement(period);
+  const fromPeriod = State.settlementFromPeriod || monthKey();
+  const toPeriod = State.settlementToPeriod || monthKey();
+  const computed = (toPeriod < fromPeriod) ? null : await Repo.computeSettlement(fromPeriod, toPeriod);
   State._lastSettlement = computed;
   const html = `
     <button class="back-btn" onclick="goTab('cash')">${ic("arrow_back")}Cash in hand</button>
-    <label>Settlement period</label>
-    <input type="month" value="${period}" onchange="State.settlementPeriod=this.value; render();">
+    <label>From</label>
+    <input type="month" value="${fromPeriod}" onchange="State.settlementFromPeriod=this.value; render();">
+    <label>To</label>
+    <input type="month" value="${toPeriod}" onchange="State.settlementToPeriod=this.value; render();">
+    <div class="meta" style="margin-top:4px;">Pick the same month twice to settle just one month, or widen the range to catch up on several unsettled months in one pass — only unsettled cash is ever touched, so it's safe even if part of the range was already settled.</div>
+    ${!computed ? `<div class="warn-box" style="margin-top:10px;">${ic("warning")}"To" must be on or after "From".</div>` : `
     <div class="divider"></div>
     <div class="row"><span class="meta">Collected (this period)</span><span class="num">${fmtMoney(computed.grossCollected)}</span></div>
     <div class="row"><span class="meta">− Owner rent (all properties)</span><span class="num">${fmtMoney(computed.ownerRentTotal)}</span></div>
@@ -1854,9 +1919,10 @@ Screens.settlement = async function(){
     ` : (computed.rows.length ? `<div class="empty">${ic("celebration")}Everyone already holds their fair share — nothing to transfer.</div>` : "")}
 
     ${computed.rows.length ? `<button class="btn" onclick="submitSettlement()">${ic("check")}Record settlement</button>` : ""}
+    `}
   `;
-  Shell("Settlement", fmtMonth(period), html);
-  computed.transfers.forEach((t,idx) => refreshTransferNote(idx));
+  Shell("Settlement", fmtPeriodRange(fromPeriod, toPeriod), html);
+  if (computed) computed.transfers.forEach((t,idx) => refreshTransferNote(idx));
 };
 function toggleTransferPaid(idx){
   const checkbox = document.getElementById("transfer-paid-"+idx);
@@ -1883,9 +1949,10 @@ function refreshTransferNote(idx){
 }
 async function submitSettlement(){
   const computed = State._lastSettlement;
+  if (!computed) return;
   const transferAmounts = {};
   computed.transfers.forEach((t, idx) => { transferAmounts[idx] = document.getElementById("transfer-"+idx).value; });
-  if (!confirm(`Record settlement for ${fmtMonth(computed.period)}? This marks the underlying cash as settled and updates each partner's carried balance.`)) return;
+  if (!confirm(`Record settlement for ${fmtPeriodRange(computed.fromPeriod, computed.toPeriod)}? This marks the underlying cash as settled and updates each partner's carried balance.`)) return;
   await Repo.recordSettlement(computed.period, computed, transferAmounts);
   const unpaidCount = computed.transfers.filter((t, idx) => (Number(transferAmounts[idx])||0) < t.amount - 0.004).length;
   toast(unpaidCount ? `Settlement recorded — ${unpaidCount} transfer${unpaidCount===1?"":"s"} still owed` : "Settlement recorded — all transfers paid");

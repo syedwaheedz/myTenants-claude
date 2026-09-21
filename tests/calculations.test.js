@@ -465,3 +465,49 @@ test("Transaction history: search and filters (status, type, receiver) narrow th
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+test("computeSettlement/recordSettlement across a multi-month range aggregates both months and marks the range settled", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const prevMk = addMonths(mk, -1);
+      const p1 = await Repo.addPartner({ name: "Partner One", share_percent: 50 });
+      const p2 = await Repo.addPartner({ name: "Partner Two", share_percent: 50 });
+      const r1 = await Repo.addReceiver({ name: "Receiver One", partner_id: p1.id });
+      const r2 = await Repo.addReceiver({ name: "Receiver Two", partner_id: p2.id });
+      const prop = await Repo.addProperty({ name: "P", owner_rent_amount: 100 });
+      const tenant = await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 20000 });
+
+      // Prior month: collected entirely by Receiver One.
+      await Repo.recordRentPayment({ tenant_id: tenant.id, total_amount: 1000, date: prevMk + "-05", splits: [{ receiver_id: r1.id, amount: 1000 }] });
+      // This month: collected entirely by Receiver Two.
+      await Repo.recordRentPayment({ tenant_id: tenant.id, total_amount: 400, date: mk + "-05", splits: [{ receiver_id: r2.id, amount: 400 }] });
+
+      const computed = await Repo.computeSettlement(prevMk, mk);
+      const transferAmounts = {};
+      computed.transfers.forEach((t, i) => { transferAmounts[i] = t.amount; });
+      await Repo.recordSettlement(computed.period, computed, transferAmounts);
+
+      const transfers = await Repo.transferHistory();
+      const tenantTxns = (await getAll("transactions")).filter(t => t.tenant_id === tenant.id);
+      const splitsAfter = (await Promise.all(tenantTxns.map(t => Repo.splitsFor(t.id)))).flat();
+      const summaryPrev = await Repo.reportPartnerSettlementSummary(prevMk);
+      const summaryThis = await Repo.reportPartnerSettlementSummary(mk);
+
+      return { computed, transfers, splitsAfter, summaryPrev, summaryThis, p1id: p1.id, p2id: p2.id };
+    });
+    // grossCollected spans both months (1000 + 400); ownerRentTotal is the
+    // 100/month owner rent x 2 months in range, not just one month's worth.
+    assert.equal(result.computed.grossCollected, 1400);
+    assert.equal(result.computed.ownerRentTotal, 200);
+    assert.equal(result.computed.finalTotal, 1200);
+    assert.equal(result.computed.fromPeriod !== result.computed.toPeriod, true, "the range should span two distinct months");
+
+    assert.ok(result.splitsAfter.every(s => s.settled_at), "splits from both months in the range must be marked settled");
+
+    assert.equal(result.summaryPrev.recorded, true, "the earlier month must be found by the range-aware settlement lookup");
+    assert.equal(result.summaryThis.recorded, true, "the later month must also be found by the same recorded range");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
