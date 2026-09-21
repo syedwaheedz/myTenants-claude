@@ -128,6 +128,40 @@ test("monthlyTenantStatusFromTxns: oldest-debt-first allocation (regression for 
   } finally { await close(); }
 });
 
+test("monthlyTenantStatusFromTxns: an explicit for_month overrides the payment date for month-bucketing", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const prevMk = addMonths(mk, -1);
+      const prop = await Repo.addProperty({ name: "For-month Test" });
+      const tenant = await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 5000 });
+      // Tenant's very first month is prevMk, so prevMk has zero prior arrears
+      // of its own — isolates the for_month effect cleanly.
+      await Repo.updateTenant(tenant.id, {
+        start_date: prevMk + "-01",
+        rent_history: [{ effective_month: prevMk, rent: 5000 }],
+        last_accrual_month: prevMk,
+      });
+      // Paid on the 10th of THIS month, but explicitly earmarked for LAST month's rent.
+      await Repo.recordRentPayment({ tenant_id: tenant.id, total_amount: 5000, date: mk + "-10", for_month: prevMk });
+
+      const rowThisMonth = (await Repo.monthlyStatusForAllTenants(mk, prop.id)).find(r => r.tenant.id === tenant.id);
+      const rowPrevMonth = (await Repo.monthlyStatusForAllTenants(prevMk, prop.id)).find(r => r.tenant.id === tenant.id);
+      return { rowThisMonth, rowPrevMonth };
+    });
+
+    assert.equal(result.rowThisMonth.status, "due", "a payment earmarked for last month must not count toward this month, even though it's dated this month");
+    assert.equal(result.rowThisMonth.appliedToCurrentMonth, 0);
+    assert.equal(result.rowThisMonth.priorArrears, 0, "the earmarked payment should have already cleared last month's rent by the time this month's prior-arrears are computed");
+
+    assert.equal(result.rowPrevMonth.status, "paid", "the payment should count toward the month it was explicitly earmarked for");
+    assert.equal(result.rowPrevMonth.appliedToCurrentMonth, 5000);
+
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test("monthlyPropertyBreakdown's collected figure agrees with the paid/partial/due counts next to it (regression)", async () => {
   const { page, errors, close } = await harness.newPage();
   try {
@@ -173,6 +207,41 @@ test("bulk setup's date field defaults to last month, not today (regression: mis
     });
     assert.ok(result.value, "bulk-date input should be present");
     assert.notEqual(result.value.slice(0, 7), result.mk, "bulk setup's default date must not fall in the current month");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("NEW_MONTH_FEATURES_ENABLED gates the Rent-month/From-To UI off by default", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const flag = typeof NEW_MONTH_FEATURES_ENABLED !== "undefined" ? NEW_MONTH_FEATURES_ENABLED : null;
+
+      const prop = await Repo.addProperty({ name: "Flag Test" });
+      const tenant = await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 5000 });
+
+      openAddPayment();
+      await new Promise(r => setTimeout(r, 30));
+      const hasApForMonth = !!document.getElementById("ap-for-month");
+      closeModal();
+
+      State.tab = "bulkSetup";
+      render();
+      await new Promise(r => setTimeout(r, 30));
+      const hasBulkForMonth = !!document.getElementById("bulk-for-month");
+      goTab("dashboard");
+
+      openMonthlyReportModal();
+      await new Promise(r => setTimeout(r, 30));
+      const hasReportToMonth = !!document.getElementById("report-to-month");
+      closeModal();
+
+      return { flag, hasApForMonth, hasBulkForMonth, hasReportToMonth };
+    });
+    assert.equal(result.flag, false, "the flag must be off by default until these features are confirmed solid");
+    assert.equal(result.hasApForMonth, false, "Add Payment's Rent-month field must be hidden while the flag is off");
+    assert.equal(result.hasBulkForMonth, false, "Bulk setup's Rent-month field must be hidden while the flag is off");
+    assert.equal(result.hasReportToMonth, false, "the Monthly Report's To-month field must be hidden while the flag is off");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

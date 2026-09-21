@@ -359,6 +359,16 @@
    Mirrors the schema and rules in architecture-flow-design.md.
    ========================================================================= */
 
+// New/still-settling features stay off by default until confirmed solid on
+// a real device with real data — flip to true here to enable for testing.
+// Gates the "Rent month" field on Add/Edit Payment + Bulk setup (which lets
+// a payment count toward a different month than the one it was received in)
+// and the Monthly Report's From/To month range. The underlying calculation
+// logic (Repo.monthlyTenantStatusFromTxns/tenantBalanceAsOf's for_month
+// handling) stays active either way — it's a no-op for every transaction
+// since nothing can set for_month while the data-entry UI is hidden, so
+// there's nothing to separately disable there.
+const NEW_MONTH_FEATURES_ENABLED = false;
 const DB_NAME = "mytenants";
 const DB_VERSION = 3;
 const STORES = ["properties","tenants","partners","receivers","transactions","transaction_splits","partner_settlements","partner_transfers","audit_log"];
@@ -387,6 +397,17 @@ function rentRateForMonth(tenant, mk){
   let rate = history[0].rent;
   for (const h of history){ if (h.effective_month <= mk) rate = h.rent; else break; }
   return rate;
+}
+// A RENT_PAYMENT's date, for month-cutoff/bucketing comparisons, is overridden
+// by an explicit for_month when set (a payment received in month X can be
+// earmarked for month X-1's rent, when a tenant customarily pays a month
+// behind). Day 15 is an arbitrary safe mid-month stand-in — these comparisons
+// only ever operate at month granularity, same spirit as the existing
+// `prevMk + "-31"` cutoff pattern elsewhere. ADJUSTMENT rows have no
+// for_month concept (their date already fully represents "as of when"), so
+// they always just use their own date.
+function txnEffectiveDate(x){
+  return (x.type === "RENT_PAYMENT" && x.for_month) ? x.for_month + "-15" : x.date;
 }
 const ic = (name) => `<span class="msi">${name}</span>`;
 function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"), 2200); }
@@ -742,7 +763,8 @@ const Repo = {
       if (x.type === "RENT_PAYMENT"){
         const via = receiverNamesFor(x.id);
         const viaLabel = via.length ? ` (via ${via.join(", ")})` : "";
-        events.push({id:x.id, date:x.date, type:"paid", label: (x.total_amount<0?"Refund / advance return":"Payment received") + viaLabel + (x.note?` — ${x.note}`:""), amount: x.total_amount});
+        const forNote = (x.for_month && x.for_month !== monthKey(x.date)) ? ` — for ${fmtMonth(x.for_month)}` : "";
+        events.push({id:x.id, date:x.date, type:"paid", label: (x.total_amount<0?"Refund / advance return":"Payment received") + viaLabel + forNote + (x.note?` — ${x.note}`:""), amount: x.total_amount});
         if (x.repair_amount) events.push({id:x.id, date:x.date, type:"paid", label:"Repair deduction", amount: x.repair_amount});
       } else if (x.type === "ADJUSTMENT"){
         const amt = x.adjustment_amount||0;
@@ -760,7 +782,12 @@ const Repo = {
   },
 
   // ---- Transactions ----
-  async recordRentPayment({tenant_id, total_amount, repair_amount, note, receipt, date, splits}){
+  // for_month (optional, "YYYY-MM"): which rent-month this payment should count
+  // toward in Defaulters/Monthly view, independent of `date` (when it was
+  // actually received) — some tenants customarily pay a given month's rent
+  // during the following month. Defaults to date's own month when omitted,
+  // so existing callers/data behave exactly as before.
+  async recordRentPayment({tenant_id, total_amount, repair_amount, note, receipt, date, splits, for_month}){
     total_amount = Number(total_amount)||0;
     repair_amount = Number(repair_amount)||0;
     splits = (splits||[]).map(s=>({...s, amount:Number(s.amount)||0})).filter(s=>s.receiver_id && s.amount);
@@ -772,7 +799,7 @@ const Repo = {
     const txn = {
       id:uid(), type:"RENT_PAYMENT", tenant_id, property_id: tenant.property_id,
       total_amount, repair_amount, is_voided:false, date: date||todayISO(),
-      note: note||"", receipt: receipt||null
+      note: note||"", receipt: receipt||null, for_month: for_month||null
     };
     await put("transactions", txn);
     for (const s of splits){
@@ -806,7 +833,7 @@ const Repo = {
   // old effect on the tenant's balance and applies the corrected one, replaces
   // its splits, and writes an EDIT audit-log entry alongside the transaction's
   // own record so the change is traceable like everything else.
-  async editRentPayment(id, {total_amount, repair_amount, note, receipt, date, splits}){
+  async editRentPayment(id, {total_amount, repair_amount, note, receipt, date, splits, for_month}){
     const txn = await get("transactions", id); if(!txn) throw new Error("Transaction not found");
     if (txn.type !== "RENT_PAYMENT") throw new Error("Only rent payments can be edited here");
     if (txn.is_voided) throw new Error("This transaction has been voided and can't be edited");
@@ -834,6 +861,7 @@ const Repo = {
     txn.note = note||"";
     txn.receipt = (receipt!==undefined) ? receipt : (txn.receipt||null);
     txn.date = date || txn.date;
+    txn.for_month = (for_month!==undefined) ? (for_month||null) : txn.for_month;
     await put("transactions", txn);
     await put("audit_log", {id:uid(), transaction_id:id, action:"EDIT", old_data:oldData, new_data:JSON.stringify(txn), timestamp:new Date().toISOString()});
     return txn;
@@ -1069,7 +1097,7 @@ const Repo = {
     let cursor = startMk;
     while (cursor <= accrualEnd){ cumDue += rentRateForMonth(tenant, cursor); cursor = addMonths(cursor, 1); }
     const cutoffDate = mk + "-31";
-    const txns = (await getAll("transactions")).filter(x=>x.tenant_id===tenantId && !x.is_voided && x.date <= cutoffDate);
+    const txns = (await getAll("transactions")).filter(x=>x.tenant_id===tenantId && !x.is_voided && txnEffectiveDate(x) <= cutoffDate);
     let cumPaid = 0;
     for (const x of txns){
       if (x.type === "RENT_PAYMENT") cumPaid += (x.total_amount + x.repair_amount);
@@ -1109,7 +1137,7 @@ const Repo = {
       const cutoff = prevMk + "-31";
       let cumPaid = 0;
       for (const x of txnsForTenant){
-        if (x.is_voided || x.date > cutoff) continue;
+        if (x.is_voided || txnEffectiveDate(x) > cutoff) continue;
         if (x.type === "RENT_PAYMENT") cumPaid += (x.total_amount + x.repair_amount);
         else if (x.type === "ADJUSTMENT") cumDue += (x.adjustment_amount||0);
       }
@@ -1118,7 +1146,7 @@ const Repo = {
 
     const due = rentRateForMonth(tenant, mk);
     const paid = txnsForTenant
-      .filter(x => !x.is_voided && x.type === "RENT_PAYMENT" && monthKey(x.date) === mk)
+      .filter(x => !x.is_voided && x.type === "RENT_PAYMENT" && (x.for_month || monthKey(x.date)) === mk)
       .reduce((s,x) => s + x.total_amount + x.repair_amount, 0);
     // Settle prior arrears first; only the remainder can apply to this month.
     const appliedToCurrentMonth = Math.max(0, Math.min(paid - Math.max(0, priorArrears), due));
@@ -1977,7 +2005,14 @@ Screens.bulkSetup = async function(){
     </div>
     <label>Date to record these as (applies to every entry below)</label>
     <input id="bulk-date" type="date" value="${addMonths(monthKey(), -1)}-28">
-    <div class="meta" style="margin:4px 0 10px;">This is historical catch-up, so it defaults to a date before this month — every screen in the app (Dashboard, monthly status, reports) reads a transaction's date to decide which month it counts toward. If you leave this set to the current month, these payments will show as this month's rent collected, even if the money actually came in earlier.</div>
+    ${NEW_MONTH_FEATURES_ENABLED ? `
+      <div class="meta" style="margin:4px 0 10px;">When you're actually entering these — the true collection date, used for cash-flow figures like Settlement and Cash in hand.</div>
+      <label>Rent month these payments are for (applies to every payment row below)</label>
+      <input id="bulk-for-month" type="month" max="${monthKey()}" value="${addMonths(monthKey(), -1)}">
+      <div class="meta" style="margin:4px 0 10px;">Only affects the Payment column — which month it counts toward in Defaulters/Monthly view. Defaults to last month, since this screen is for historical catch-up. The opening-balance column is unaffected — an adjustment doesn't have this distinction.</div>
+    ` : `
+      <div class="meta" style="margin:4px 0 10px;">This is historical catch-up, so it defaults to a date before this month — every screen in the app (Dashboard, monthly status, reports) reads a transaction's date to decide which month it counts toward. If you leave this set to the current month, these payments will show as this month's rent collected, even if the money actually came in earlier.</div>
+    `}
     ${Object.entries(byProperty).map(([propName, rows])=>`
       <div class="section-title">${ic("apartment")}${esc(propName)}</div>
       <div class="list-card">
@@ -2006,6 +2041,7 @@ Screens.bulkSetup = async function(){
 async function submitBulkSetup(){
   const tenants = (await Repo.allTenantsWithProperty()).filter(t=>!t.archived);
   const date = document.getElementById("bulk-date").value || todayISO();
+  const forMonth = document.getElementById("bulk-for-month")?.value || undefined;
   const rows = [];
   for (const t of tenants){
     const adjEl = document.getElementById(`bulk-adj-${t.id}`);
@@ -2024,7 +2060,7 @@ async function submitBulkSetup(){
   if (!proceed) return;
   for (const {tenant, adj, pay, receiver_id} of rows){
     if (adj) await Repo.recordBalanceAdjustment({tenant_id: tenant.id, amount: adj, note: "Bulk setup entry — opening balance", date});
-    if (pay) await Repo.recordRentPayment({tenant_id: tenant.id, total_amount: pay, date, splits: receiver_id ? [{receiver_id, amount: pay}] : []});
+    if (pay) await Repo.recordRentPayment({tenant_id: tenant.id, total_amount: pay, date, for_month: forMonth, splits: receiver_id ? [{receiver_id, amount: pay}] : []});
   }
   toast(`Saved ${adjCount + payCount} entries`);
   goTab("partners");
@@ -2540,15 +2576,24 @@ async function shareSnapshot(){
 function openMonthlyReportModal(){
   document.getElementById("modal-root")?.remove();
   const root = document.createElement("div"); root.id="modal-root"; document.body.appendChild(root);
-  const month = State.reportMonth || monthKey();
+  const fromMonth = State.reportFromMonth || monthKey();
+  const toMonth = State.reportToMonth || monthKey();
   root.innerHTML = `
     <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
       <div class="modal">
         <div class="sheet-handle"></div>
         <div class="modal-head"><h2>Monthly report</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
-        <div class="meta" style="margin-bottom:10px;">A detailed PDF covering collections, defaulters, property-by-property status, cash in hand, and partner settlement for the month you pick.</div>
-        <label>Month</label>
-        <input type="month" id="report-month" max="${monthKey()}" value="${month}">
+        ${NEW_MONTH_FEATURES_ENABLED ? `
+          <div class="meta" style="margin-bottom:10px;">A detailed PDF covering collections, defaulters, property-by-property status, cash in hand, and partner settlement for the month(s) you pick. Pick the same month twice for a single-month report, or widen the range to combine several months into one PDF.</div>
+          <label>From</label>
+          <input type="month" id="report-from-month" max="${monthKey()}" value="${fromMonth}">
+          <label>To</label>
+          <input type="month" id="report-to-month" max="${monthKey()}" value="${toMonth}">
+        ` : `
+          <div class="meta" style="margin-bottom:10px;">A detailed PDF covering collections, defaulters, property-by-property status, cash in hand, and partner settlement for the month you pick.</div>
+          <label>Month</label>
+          <input type="month" id="report-from-month" max="${monthKey()}" value="${fromMonth}">
+        `}
         <button class="btn" style="margin-top:16px;" onclick="exportMonthlyReportPdf()">${ic("picture_as_pdf")}Export PDF</button>
         <div class="meta" style="margin-top:10px;">This opens your browser's print dialog — choose "Save as PDF" as the destination.</div>
       </div>
@@ -2587,7 +2632,7 @@ async function buildMonthlyReportData(mk){
 
   return { mk, collected, outstandingTotal, cashTotal, cashRows, paidCount, partialCount, dueCount, portfolio, trend, defaulters, outstandingByProperty, propertyDetail, partnerSettlement, transfersThisPeriod };
 }
-function buildMonthlyReportHtml(data){
+function buildMonthlyReportHtml(data, showPeriodInFooter){
   const generatedDate = fmtDate(todayISO());
   const periodLabel = fmtMonth(data.mk);
   const totalTenantsThisMonth = data.paidCount + data.partialCount + data.dueCount;
@@ -2596,7 +2641,12 @@ function buildMonthlyReportHtml(data){
       <div class="r-brand"><img src="icons/icon-192.png" class="r-logo" alt=""><div class="r-brand-name">myTenants</div></div>
       <div class="r-doc-title"><div class="t1">Monthly Report</div><div class="t2">${esc(periodLabel)}</div></div>
     </div>`;
-  const rFooter = (n,total) => `<div class="r-footer"><div class="inner"><span>myTenants — Monthly Report</span><span>Page ${n} of ${total}</span></div></div>`;
+  // When several months are concatenated into one PDF (see exportMonthlyReportPdf),
+  // each month keeps its own self-contained "Page N of 3" numbering rather than a
+  // running count across the whole document — simpler and less risky than making
+  // every page aware of its position in the full multi-month set — but the footer
+  // gets a month label so it's clear which month's pages you're looking at.
+  const rFooter = (n,total) => `<div class="r-footer"><div class="inner"><span>myTenants — Monthly Report${showPeriodInFooter ? " · " + esc(periodLabel) : ""}</span><span>Page ${n} of ${total}</span></div></div>`;
 
   const page1 = `
     <div class="r-page">
@@ -2709,15 +2759,25 @@ function buildMonthlyReportHtml(data){
   return page1 + page2 + page3;
 }
 async function exportMonthlyReportPdf(){
-  const mk = document.getElementById("report-month").value || monthKey();
-  State.reportMonth = mk;
-  const data = await buildMonthlyReportData(mk);
-  document.getElementById("report-print-root").innerHTML = buildMonthlyReportHtml(data);
+  const fromMk = document.getElementById("report-from-month").value || monthKey();
+  const toMk = document.getElementById("report-to-month")?.value || fromMk;
+  if (toMk < fromMk) return toast("'To' month must be on or after 'From' month");
+  State.reportFromMonth = fromMk;
+  State.reportToMonth = toMk;
+  const months = [];
+  for (let mk = fromMk; mk <= toMk; mk = addMonths(mk, 1)) months.push(mk);
+  let html = "";
+  for (const mk of months){
+    const data = await buildMonthlyReportData(mk);
+    html += buildMonthlyReportHtml(data, months.length > 1);
+  }
+  document.getElementById("report-print-root").innerHTML = html;
   closeModal();
   setTimeout(() => {
     // Android's WebView never implements window.print() (silent no-op) —
     // use the NativePrint plugin's Android PrintManager bridge instead.
-    if (isNativeApp()) window.Capacitor.Plugins.NativePrint.print({ jobName: `myTenants-${mk}` });
+    const jobName = fromMk === toMk ? `myTenants-${fromMk}` : `myTenants-${fromMk}_to_${toMk}`;
+    if (isNativeApp()) window.Capacitor.Plugins.NativePrint.print({ jobName });
     else window.print();
   }, 150);
 }
@@ -2792,7 +2852,14 @@ async function openAddPayment(prefillTenantId){
 
         <label>Date</label>
         <input id="ap-date" type="date" value="${todayISO()}">
-        <div class="meta" style="margin-top:4px;">Also decides which month this counts toward in Defaulters/Monthly view — pick an earlier date if this was a late payment for a prior month.</div>
+        ${NEW_MONTH_FEATURES_ENABLED ? `
+          <div class="meta" style="margin-top:4px;">When the payment was actually received.</div>
+          <label>Rent month</label>
+          <input type="month" id="ap-for-month" max="${monthKey()}" value="${monthKey()}">
+          <div class="meta" style="margin-top:4px;">Which month's rent this counts toward in Defaulters/Monthly view. Defaults to the payment date's month — change it if this was a late payment for an earlier month.</div>
+        ` : `
+          <div class="meta" style="margin-top:4px;">Also decides which month this counts toward in Defaulters/Monthly view — pick an earlier date if this was a late payment for a prior month.</div>
+        `}
 
         ${receiverPickerHtml(receivers, partnerById)}
 
@@ -2856,9 +2923,10 @@ async function submitAddPayment(){
   const repair_amount = repairOn ? document.getElementById("ap-repair-amount").value : 0;
   const note = document.getElementById("ap-note").value.trim();
   const date = document.getElementById("ap-date").value || todayISO();
+  const for_month = document.getElementById("ap-for-month")?.value || undefined;
   const splits = apCollectReceivers(total_amount);
   try{
-    await Repo.recordRentPayment({tenant_id, total_amount, repair_amount, note, receipt:_apReceiptDataUrl, date, splits});
+    await Repo.recordRentPayment({tenant_id, total_amount, repair_amount, note, receipt:_apReceiptDataUrl, date, for_month, splits});
     _apReceiptDataUrl = null;
     closeModal(); toast("Payment saved"); render();
   }catch(e){ toast(e.message); }
@@ -2884,7 +2952,7 @@ async function openTxnDetail(id){
         <div class="modal-head"><h2>${isAdj?"Balance adjustment":"Payment detail"}</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
         <div class="card">
           <div class="row"><div class="name">${esc(tenant?tenant.name:"—")}</div>${txn.is_voided?'<span class="chip due">Voided</span>':""}</div>
-          <div class="meta">${fmtDate(txn.date)}</div>
+          <div class="meta">${fmtDate(txn.date)}${!isAdj && txn.for_month && txn.for_month!==monthKey(txn.date) ? ` · for ${fmtMonth(txn.for_month)}` : ""}</div>
           <div class="divider"></div>
           ${isAdj ? `
             <div class="row"><span class="meta">${txn.adjustment_amount>=0?"Added to balance":"Reduced from balance"}</span><span class="num">${fmtMoney(Math.abs(txn.adjustment_amount||0))}</span></div>
@@ -2941,7 +3009,14 @@ async function openEditPayment(id){
 
         <label>Date</label>
         <input id="ap-date" type="date" value="${txn.date}">
-        <div class="meta" style="margin-top:4px;">Also decides which month this counts toward in Defaulters/Monthly view — pick an earlier date if this was a late payment for a prior month.</div>
+        ${NEW_MONTH_FEATURES_ENABLED ? `
+          <div class="meta" style="margin-top:4px;">When the payment was actually received.</div>
+          <label>Rent month</label>
+          <input type="month" id="ap-for-month" max="${monthKey()}" value="${txn.for_month || monthKey(txn.date)}">
+          <div class="meta" style="margin-top:4px;">Which month's rent this counts toward in Defaulters/Monthly view. Defaults to the payment date's month — change it if this was a late payment for an earlier month.</div>
+        ` : `
+          <div class="meta" style="margin-top:4px;">Also decides which month this counts toward in Defaulters/Monthly view — pick an earlier date if this was a late payment for a prior month.</div>
+        `}
 
         ${receiverPickerHtml(receivers, partnerById, {multi:isMulti, singleSelectedId: !isMulti && splits[0] ? splits[0].receiver_id : ""})}
 
@@ -2974,9 +3049,10 @@ async function submitEditPayment(id){
   const repair_amount = repairOn ? document.getElementById("ap-repair-amount").value : 0;
   const note = document.getElementById("ap-note").value.trim();
   const date = document.getElementById("ap-date").value || todayISO();
+  const for_month = document.getElementById("ap-for-month")?.value || undefined;
   const splits = apCollectReceivers(total_amount);
   try{
-    await Repo.editRentPayment(id, {total_amount, repair_amount, note, receipt:_apReceiptDataUrl, date, splits});
+    await Repo.editRentPayment(id, {total_amount, repair_amount, note, receipt:_apReceiptDataUrl, date, for_month, splits});
     _apReceiptDataUrl = null;
     closeModal(); toast("Payment updated"); render();
   }catch(e){ toast(e.message); }

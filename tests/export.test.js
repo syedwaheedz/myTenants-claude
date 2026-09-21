@@ -56,10 +56,14 @@ test("exportMonthlyReportPdf uses the native print plugin when isNativeApp() is 
       const prop = await Repo.addProperty({ name: "P" });
       await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 5000 });
 
-      const monthInput = document.createElement("input");
-      monthInput.id = "report-month";
-      monthInput.value = mk;
-      document.body.appendChild(monthInput);
+      const fromInput = document.createElement("input");
+      fromInput.id = "report-from-month";
+      fromInput.value = mk;
+      document.body.appendChild(fromInput);
+      const toInput = document.createElement("input");
+      toInput.id = "report-to-month";
+      toInput.value = mk;
+      document.body.appendChild(toInput);
 
       let webPrintCalled = false;
       window.print = () => { webPrintCalled = true; };
@@ -80,6 +84,43 @@ test("exportMonthlyReportPdf uses the native print plugin when isNativeApp() is 
     assert.equal(result.nativePrintCalledWebPrintToo, false, "the native path must not also fall through to window.print()");
     assert.match(result.nativePrintArgs.jobName, /^myTenants-/);
     assert.equal(result.reportHtmlNonEmpty, true);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("exportMonthlyReportPdf concatenates one 3-page report per month across a From/To range", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const toMk = monthKey();
+      const fromMk = addMonths(toMk, -1);
+      const prop = await Repo.addProperty({ name: "P" });
+      await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 5000 });
+
+      const fromInput = document.createElement("input");
+      fromInput.id = "report-from-month";
+      fromInput.value = fromMk;
+      document.body.appendChild(fromInput);
+      const toInput = document.createElement("input");
+      toInput.id = "report-to-month";
+      toInput.value = toMk;
+      document.body.appendChild(toInput);
+
+      window.print = () => {};
+      await exportMonthlyReportPdf();
+      await new Promise(r => setTimeout(r, 300));
+
+      const root = document.getElementById("report-print-root");
+      const pageCount = root.querySelectorAll(".r-page").length;
+      const footerText = [...root.querySelectorAll(".r-footer")].map(f => f.textContent);
+      return { pageCount, footerText, fromLabel: fmtMonth(fromMk), toLabel: fmtMonth(toMk) };
+    });
+    assert.equal(result.pageCount, 6, "2 months x 3 pages each");
+    // Each month's footer is self-contained ("Page 1 of 3", not "Page 4 of 6")
+    // but prefixed with its own month so it's clear which month you're looking at.
+    assert.ok(result.footerText.some(t => t.includes("Page 1 of 3")));
+    assert.ok(result.footerText.some(t => t.includes(result.fromLabel)), "footer should mention the From month");
+    assert.ok(result.footerText.some(t => t.includes(result.toLabel)), "footer should mention the To month");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
