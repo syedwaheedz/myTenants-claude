@@ -1273,7 +1273,12 @@ Screens.dashboard = async function(){
   const dueCount = monthlyStatuses.filter(s=>s.status==="due").length;
   const topDefaulters = defaulters.slice(0,3);
   const dueThisMonth = monthlyStatuses.reduce((s,r)=>s+r.due,0);
-  const pctCollected = dueThisMonth>0.004 ? Math.min(100, Math.round((collected/dueThisMonth)*100)) : (collected>0.004?100:0);
+  // Cap each tenant's contribution at their own month's rent — otherwise a
+  // tenant who overpays to clear old arrears (paid > due for THIS month)
+  // inflates the total even while other tenants have paid nothing, which
+  // let this show 100% collected while several tenants were still due.
+  const collectedTowardThisMonth = monthlyStatuses.reduce((s,r)=>s+Math.min(r.paid, r.due),0);
+  const pctCollected = dueThisMonth>0.004 ? Math.round((collectedTowardThisMonth/dueThisMonth)*100) : (collectedTowardThisMonth>0.004?100:0);
   const html = `
     <div class="stat-grid">
       <div class="stat">
@@ -1299,7 +1304,7 @@ Screens.dashboard = async function(){
       <div class="phead">
         <div class="ptitle">
           <div class="card-icon" style="background:var(--paid-bg);color:var(--paid);">${ic("payments")}</div>
-          <div><div class="t">Rent collected — ${fmtMonth(monthKey())}</div><div class="s">${fmtMoney(collected)} of ${fmtMoney(dueThisMonth)} due this month</div></div>
+          <div><div class="t">Rent collected — ${fmtMonth(monthKey())}</div><div class="s">${fmtMoney(collectedTowardThisMonth)} of ${fmtMoney(dueThisMonth)} due this month</div></div>
         </div>
         <div class="pct">${pctCollected}%</div>
       </div>
@@ -1754,14 +1759,64 @@ async function confirmSignOutSync(){
   render();
 }
 
+// Admin-only allowlist management. RLS (supabase/migrations/0004) is the
+// real enforcement — this query simply comes back empty for anyone who
+// isn't an admin, which is also exactly how this card decides whether to
+// show itself at all.
+async function fetchAllowedEmailsIfAdmin(){
+  const sb = supabaseClient();
+  const orgId = await syncMetaGet("org_id");
+  if (!sb || !orgId) return null;
+  const { data, error } = await sb.from("allowed_emails").select("email, is_admin").order("email");
+  if (error || !data || !data.length) return null;
+  return data;
+}
+async function allowlistAdminCardHtml(){
+  const list = await fetchAllowedEmailsIfAdmin();
+  if (!list) return "";
+  const myEmail = (await syncMetaGet("user_email") || "").toLowerCase();
+  return `
+    <div class="section-title">${ic("admin_panel_settings")}Allowed sign-ins (admin)</div>
+    <div class="list-card">
+      ${list.map(r=>`
+        <div class="list-row">
+          <div class="lr-main"><div class="name">${esc(r.email)}</div>${r.is_admin?`<div class="meta">Admin</div>`:""}</div>
+          ${r.email.toLowerCase()!==myEmail ? `<button class="link-btn danger-link" onclick="removeAllowedEmailConfirm('${r.email}')">${ic("delete")}</button>` : `<span class="chip neutral">You</span>`}
+        </div>`).join("")}
+    </div>
+    <label>Add email</label>
+    <input id="new-allowed-email" type="email" placeholder="partner@example.com">
+    <button class="btn secondary" style="margin-top:10px;" onclick="submitAddAllowedEmail()">${ic("person_add")}Allow this email</button>
+  `;
+}
+async function submitAddAllowedEmail(){
+  const el = document.getElementById("new-allowed-email");
+  const email = el.value.trim().toLowerCase();
+  if (!email) return toast("Enter an email address");
+  const sb = supabaseClient();
+  const { error } = await sb.from("allowed_emails").insert({ email });
+  if (error) return toast(error.message || "Couldn't add that email");
+  el.value = "";
+  toast("Added — they can now sign in"); render();
+}
+async function removeAllowedEmailConfirm(email){
+  if (!confirm(`Remove ${email} from the allowlist? They'll no longer be able to sign in (existing sessions aren't revoked).`)) return;
+  const sb = supabaseClient();
+  const { error } = await sb.from("allowed_emails").delete().eq("email", email);
+  if (error) return toast(error.message || "Couldn't remove that email");
+  toast("Removed"); render();
+}
+
 Screens.partners = async function(){
   const {ok, sum, partners} = await Repo.validateShares();
   const receivers = await Repo.allReceivers();
   const partnerById = Object.fromEntries(partners.map(p=>[p.id,p]));
   const shareData = partners.filter(p=>p.share_percent>0).map(p=>({label:p.name, value:p.share_percent}));
   const syncCard = await cloudSyncCardHtml();
+  const adminCard = await allowlistAdminCardHtml();
   const html = `
     ${syncCard}
+    ${adminCard}
     ${!ok && partners.length ? `<div class="warn-box">${ic("warning")}Shares add up to ${sum}% — they should total 100%.</div>` : ""}
     ${shareData.length>1 ? `<div class="chart-card">
       <div class="chart-title">Share of the pool</div>
@@ -1801,6 +1856,10 @@ Screens.partners = async function(){
     <div style="height:10px;"></div>
     <label>Restore from backup</label>
     <input type="file" accept="application/json" onchange="importBackup(event)">
+
+    <div class="section-title">${ic("playlist_add")}One-time setup</div>
+    <div class="meta" style="margin-bottom:10px;">New here and bringing in old balances or payments from before this app? Do it for every tenant in one pass instead of one at a time.</div>
+    <button class="btn ghost" onclick="State.tab='bulkSetup'; render();">${ic("playlist_add")}Bulk add opening balances / payments</button>
   `;
   Shell("Manage partners", null, html);
 };
@@ -1830,6 +1889,71 @@ async function importBackup(ev){
   try{ await Repo.importDatabaseCopy(text); toast("Backup restored"); goTab("dashboard"); }
   catch(e){ toast("Could not read backup file"); }
   ev.target.value="";
+}
+
+// ---------- Bulk one-time setup (old balances / payments, all at once) ----------
+Screens.bulkSetup = async function(){
+  const tenants = await Repo.allTenantsWithProperty();
+  const receivers = await Repo.allReceivers();
+  const active = tenants.filter(t=>!t.archived);
+  const byProperty = {};
+  for (const t of active) (byProperty[t.property?.name || "No property"] ||= []).push(t);
+  const html = `
+    <button class="back-btn" onclick="goTab('partners')">${ic("arrow_back")}Manage partners</button>
+    <div class="card">
+      <div class="name">One-time setup</div>
+      <div class="meta" style="margin-top:4px;">For each tenant, optionally add an opening balance (what they owed before this app) and/or a payment (what they've already paid) — leave either blank to skip. Needs repair deductions, split receivers, or a different date per tenant? Use the normal Add Payment / Adjust Balance screens for those instead.</div>
+    </div>
+    <label>As of date</label>
+    <input id="bulk-date" type="date" value="${todayISO()}">
+    <label>Received by (applies to every payment below)</label>
+    <select id="bulk-receiver"><option value="">Not specified</option>${receivers.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select>
+    ${Object.entries(byProperty).map(([propName, rows])=>`
+      <div class="section-title">${ic("apartment")}${esc(propName)}</div>
+      <div class="list-card">
+        ${rows.map(t=>`
+          <div class="list-row">
+            <div class="lr-main">
+              <div class="name">${esc(t.name)}</div>
+              <div class="meta">Currently ${fmtMoney(t.current_balance||0)}</div>
+            </div>
+            <div style="width:110px;">
+              <input id="bulk-adj-${t.id}" type="number" step="0.01" placeholder="Owed">
+            </div>
+            <div style="width:110px;">
+              <input id="bulk-pay-${t.id}" type="number" step="0.01" placeholder="Payment">
+            </div>
+          </div>`).join("")}
+      </div>
+    `).join("")}
+    <button class="btn" style="margin-top:10px;" onclick="submitBulkSetup()">${ic("playlist_add")}Save all</button>
+  `;
+  Shell("One-time setup", null, html);
+};
+async function submitBulkSetup(){
+  const tenants = (await Repo.allTenantsWithProperty()).filter(t=>!t.archived);
+  const date = document.getElementById("bulk-date").value || todayISO();
+  const receiver_id = document.getElementById("bulk-receiver").value || null;
+  const rows = [];
+  for (const t of tenants){
+    const adjEl = document.getElementById(`bulk-adj-${t.id}`);
+    const payEl = document.getElementById(`bulk-pay-${t.id}`);
+    const adj = adjEl && adjEl.value ? Number(adjEl.value) : 0;
+    const pay = payEl && payEl.value ? Number(payEl.value) : 0;
+    if (adj || pay) rows.push({tenant: t, adj, pay});
+  }
+  if (!rows.length) return toast("Enter at least one opening balance or payment");
+  const adjCount = rows.filter(r=>r.adj).length;
+  const payCount = rows.filter(r=>r.pay).length;
+  const total = rows.reduce((s,r)=>s+Math.abs(r.adj)+Math.abs(r.pay), 0);
+  const proceed = confirm(`Record ${adjCount} opening balance${adjCount===1?"":"s"} and ${payCount} payment${payCount===1?"":"s"}, ${fmtMoney(total)} total?\n\nThis creates real ledger entries — each one can be edited or voided afterward like any other, but this bulk pass itself can't be undone as a whole.`);
+  if (!proceed) return;
+  for (const {tenant, adj, pay} of rows){
+    if (adj) await Repo.recordBalanceAdjustment({tenant_id: tenant.id, amount: adj, note: "Bulk setup entry — opening balance", date});
+    if (pay) await Repo.recordRentPayment({tenant_id: tenant.id, total_amount: pay, date, splits: receiver_id ? [{receiver_id, amount: pay}] : []});
+  }
+  toast(`Saved ${adjCount + payCount} entries`);
+  goTab("partners");
 }
 
 // ---------- navigation helpers ----------
