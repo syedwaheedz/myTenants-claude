@@ -2834,10 +2834,19 @@ async function ensureMembership(userId){
   if (!data || !data.length) await sb.from("memberships").insert({ user_id: userId, org_id: userId });
 }
 
+// The app's real public URL — used as the auth redirect target instead of
+// window.location.href when running natively, since inside the Android
+// WebView that's https://localhost/index.html, an address that only means
+// something inside the app's own sandbox and that no external browser (or
+// the mail app opening the link) can ever reach. The Android App Link
+// intent-filter (AndroidManifest.xml) is what routes a tap on this exact
+// URL into the installed app instead of a browser.
+const APP_PUBLIC_URL = "https://syedwaheedz.github.io/myTenants-claude/";
 async function signInWithEmail(email){
   const sb = supabaseClient();
   if (!sb) throw new Error("Cloud sync isn't available right now — check your connection and try again.");
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+  const redirectTo = isNativeApp() ? APP_PUBLIC_URL : window.location.href;
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
   if (error) throw error;
 }
 async function signOutSync(){
@@ -2931,11 +2940,40 @@ async function initSync(){
   setInterval(syncNow, 45000);
 }
 
+// Android App Link handler: the manifest's intent-filter routes a tap on
+// https://syedwaheedz.github.io/myTenants-claude/* straight into this app
+// (instead of the browser) — Capacitor delivers that as an "appUrlOpen"
+// event rather than a normal page load, so supabase-js's own auto
+// session-detection (which only looks at window.location on boot) never
+// sees it. Parse the incoming URL for the auth tokens/code by hand and
+// hand them to supabase-js directly.
+function setupDeepLinkAuth(){
+  if (!isNativeApp() || !window.Capacitor.Plugins.App) return;
+  window.Capacitor.Plugins.App.addListener("appUrlOpen", async (event) => {
+    const sb = supabaseClient();
+    if (!sb || !event.url) return;
+    try{
+      const url = new URL(event.url);
+      const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+      const access_token = hashParams.get("access_token");
+      const refresh_token = hashParams.get("refresh_token");
+      const code = url.searchParams.get("code");
+      if (access_token && refresh_token) await sb.auth.setSession({ access_token, refresh_token });
+      else if (code) await sb.auth.exchangeCodeForSession(code);
+      else return; // not an auth deep link
+      await initSync();
+      render();
+      toast("Signed in");
+    } catch(e){ console.error("deep link auth failed", e); }
+  });
+}
+
 // ---------- init ----------
 (async function init(){
   await openDB();
   await Repo.runDueAccruals();
   render();
+  setupDeepLinkAuth();
   initSync();
 })();
 

@@ -1,0 +1,5 @@
+# Jekyll (the GitHub Pages build engine, .github/workflows/jekyll-gh-pages.yml)
+# excludes dotfiles/dotfolders by default — explicitly include .well-known so
+# assetlinks.json (Android App Link verification) actually gets published.
+include:
+  - ".well-known"

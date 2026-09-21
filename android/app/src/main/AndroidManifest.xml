@@ -18,6 +18,21 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Android App Link: routes the Supabase magic-link email (and
+                 later, Google OAuth) redirect straight into this app instead
+                 of the phone's default browser, which can't reach the app's
+                 own https://localhost origin. Verified via
+                 /.well-known/assetlinks.json hosted on the same domain. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="syedwaheedz.github.io"
+                    android:pathPrefix="/myTenants-claude" />
+            </intent-filter>
         </activity>
 
         <provider
