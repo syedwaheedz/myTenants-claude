@@ -359,16 +359,6 @@
    Mirrors the schema and rules in architecture-flow-design.md.
    ========================================================================= */
 
-// New/still-settling features stay off by default until confirmed solid on
-// a real device with real data — flip to true here to enable for testing.
-// Gates the "Rent month" field on Add/Edit Payment + Bulk setup (which lets
-// a payment count toward a different month than the one it was received in)
-// and the Monthly Report's From/To month range. The underlying calculation
-// logic (Repo.monthlyTenantStatusFromTxns/tenantBalanceAsOf's for_month
-// handling) stays active either way — it's a no-op for every transaction
-// since nothing can set for_month while the data-entry UI is hidden, so
-// there's nothing to separately disable there.
-const NEW_MONTH_FEATURES_ENABLED = false;
 const DB_NAME = "mytenants";
 const DB_VERSION = 3;
 const STORES = ["properties","tenants","partners","receivers","transactions","transaction_splits","partner_settlements","partner_transfers","audit_log"];
@@ -2005,14 +1995,10 @@ Screens.bulkSetup = async function(){
     </div>
     <label>Date to record these as (applies to every entry below)</label>
     <input id="bulk-date" type="date" value="${addMonths(monthKey(), -1)}-28">
-    ${NEW_MONTH_FEATURES_ENABLED ? `
-      <div class="meta" style="margin:4px 0 10px;">When you're actually entering these — the true collection date, used for cash-flow figures like Settlement and Cash in hand.</div>
-      <label>Rent month these payments are for (applies to every payment row below)</label>
-      <input id="bulk-for-month" type="month" max="${monthKey()}" value="${addMonths(monthKey(), -1)}">
-      <div class="meta" style="margin:4px 0 10px;">Only affects the Payment column — which month it counts toward in Defaulters/Monthly view. Defaults to last month, since this screen is for historical catch-up. The opening-balance column is unaffected — an adjustment doesn't have this distinction.</div>
-    ` : `
-      <div class="meta" style="margin:4px 0 10px;">This is historical catch-up, so it defaults to a date before this month — every screen in the app (Dashboard, monthly status, reports) reads a transaction's date to decide which month it counts toward. If you leave this set to the current month, these payments will show as this month's rent collected, even if the money actually came in earlier.</div>
-    `}
+    <div class="meta" style="margin:4px 0 10px;">When you're actually entering these — the true collection date, used for cash-flow figures like Settlement and Cash in hand.</div>
+    <label>Rent month these payments are for (applies to every payment row below)</label>
+    <input id="bulk-for-month" type="month" max="${monthKey()}" value="${addMonths(monthKey(), -1)}">
+    <div class="meta" style="margin:4px 0 10px;">Only affects the Payment column — which month it counts toward in Defaulters/Monthly view. Defaults to last month, since this screen is for historical catch-up. The opening-balance column is unaffected — an adjustment doesn't have this distinction.</div>
     ${Object.entries(byProperty).map(([propName, rows])=>`
       <div class="section-title">${ic("apartment")}${esc(propName)}</div>
       <div class="list-card">
@@ -2583,17 +2569,11 @@ function openMonthlyReportModal(){
       <div class="modal">
         <div class="sheet-handle"></div>
         <div class="modal-head"><h2>Monthly report</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
-        ${NEW_MONTH_FEATURES_ENABLED ? `
-          <div class="meta" style="margin-bottom:10px;">A detailed PDF covering collections, defaulters, property-by-property status, cash in hand, and partner settlement for the month(s) you pick. Pick the same month twice for a single-month report, or widen the range to combine several months into one PDF.</div>
-          <label>From</label>
-          <input type="month" id="report-from-month" max="${monthKey()}" value="${fromMonth}">
-          <label>To</label>
-          <input type="month" id="report-to-month" max="${monthKey()}" value="${toMonth}">
-        ` : `
-          <div class="meta" style="margin-bottom:10px;">A detailed PDF covering collections, defaulters, property-by-property status, cash in hand, and partner settlement for the month you pick.</div>
-          <label>Month</label>
-          <input type="month" id="report-from-month" max="${monthKey()}" value="${fromMonth}">
-        `}
+        <div class="meta" style="margin-bottom:10px;">A detailed PDF covering collections, defaulters, property-by-property status, cash in hand, and partner settlement for the month(s) you pick. Pick the same month twice for a single-month report, or widen the range to combine several months into one PDF.</div>
+        <label>From</label>
+        <input type="month" id="report-from-month" max="${monthKey()}" value="${fromMonth}">
+        <label>To</label>
+        <input type="month" id="report-to-month" max="${monthKey()}" value="${toMonth}">
         <button class="btn" style="margin-top:16px;" onclick="exportMonthlyReportPdf()">${ic("picture_as_pdf")}Export PDF</button>
         <div class="meta" style="margin-top:10px;">This opens your browser's print dialog — choose "Save as PDF" as the destination.</div>
       </div>
@@ -2852,14 +2832,10 @@ async function openAddPayment(prefillTenantId){
 
         <label>Date</label>
         <input id="ap-date" type="date" value="${todayISO()}">
-        ${NEW_MONTH_FEATURES_ENABLED ? `
-          <div class="meta" style="margin-top:4px;">When the payment was actually received.</div>
-          <label>Rent month</label>
-          <input type="month" id="ap-for-month" max="${monthKey()}" value="${monthKey()}">
-          <div class="meta" style="margin-top:4px;">Which month's rent this counts toward in Defaulters/Monthly view. Defaults to the payment date's month — change it if this was a late payment for an earlier month.</div>
-        ` : `
-          <div class="meta" style="margin-top:4px;">Also decides which month this counts toward in Defaulters/Monthly view — pick an earlier date if this was a late payment for a prior month.</div>
-        `}
+        <div class="meta" style="margin-top:4px;">When the payment was actually received.</div>
+        <label>Rent month</label>
+        <input type="month" id="ap-for-month" max="${monthKey()}" value="${monthKey()}">
+        <div class="meta" style="margin-top:4px;">Which month's rent this counts toward in Defaulters/Monthly view. Defaults to the payment date's month — change it if this was a late payment for an earlier month.</div>
 
         ${receiverPickerHtml(receivers, partnerById)}
 
@@ -3009,14 +2985,10 @@ async function openEditPayment(id){
 
         <label>Date</label>
         <input id="ap-date" type="date" value="${txn.date}">
-        ${NEW_MONTH_FEATURES_ENABLED ? `
-          <div class="meta" style="margin-top:4px;">When the payment was actually received.</div>
-          <label>Rent month</label>
-          <input type="month" id="ap-for-month" max="${monthKey()}" value="${txn.for_month || monthKey(txn.date)}">
-          <div class="meta" style="margin-top:4px;">Which month's rent this counts toward in Defaulters/Monthly view. Defaults to the payment date's month — change it if this was a late payment for an earlier month.</div>
-        ` : `
-          <div class="meta" style="margin-top:4px;">Also decides which month this counts toward in Defaulters/Monthly view — pick an earlier date if this was a late payment for a prior month.</div>
-        `}
+        <div class="meta" style="margin-top:4px;">When the payment was actually received.</div>
+        <label>Rent month</label>
+        <input type="month" id="ap-for-month" max="${monthKey()}" value="${txn.for_month || monthKey(txn.date)}">
+        <div class="meta" style="margin-top:4px;">Which month's rent this counts toward in Defaulters/Monthly view. Defaults to the payment date's month — change it if this was a late payment for an earlier month.</div>
 
         ${receiverPickerHtml(receivers, partnerById, {multi:isMulti, singleSelectedId: !isMulti && splits[0] ? splits[0].receiver_id : ""})}
 
