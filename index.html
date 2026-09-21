@@ -41,6 +41,10 @@
     --md-success:#1E6E3C;
     --md-success-container:#D8F3DF;
 
+    /* ---- logo pink: a subtle decorative accent only (topbar glow) —
+       the functional UI color stays the teal seed above ---- */
+    --brand-pink:#D50262;
+
     --shadow-1:0 1px 2px rgba(0,0,0,.24), 0 1px 3px 1px rgba(0,0,0,.12);
     --shadow-2:0 1px 2px rgba(0,0,0,.20), 0 3px 8px 1px rgba(0,0,0,.14);
     --shadow-3:0 4px 10px 2px rgba(0,0,0,.14), 0 2px 4px rgba(0,0,0,.22);
@@ -89,7 +93,16 @@
   .topbar{
     position:sticky;top:0;z-index:5;background:var(--bg);
     padding:20px 16px 12px 16px;display:flex;align-items:center;justify-content:space-between;
+    overflow:hidden;
   }
+  /* subtle logo-pink wash — the one deliberate nod to the logo's brand
+     color; everything else in the app stays the teal seed */
+  .topbar::before{
+    content:"";position:absolute;top:-40px;left:-30px;width:180px;height:140px;
+    background:radial-gradient(closest-side, var(--brand-pink) 0%, transparent 75%);
+    opacity:.10;pointer-events:none;
+  }
+  .topbar > *{position:relative;}
   .topbar h1{font-size:20px;color:var(--ink);}
   .topbar .sub{color:var(--ink-soft);font-size:13px;}
   .icon-btn{
@@ -110,8 +123,9 @@
   .card.tap{cursor:pointer;}
   .card.tap:active{transform:scale(.99);box-shadow:var(--shadow-1);}
   .chart-card{background:var(--surface);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow-1);}
+  .chart-card .chead{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
   .chart-card .chart-title{font-size:13.5px;font-weight:600;color:var(--ink);margin-bottom:2px;}
-  .chart-card .chart-sub{font-size:12px;color:var(--ink-soft);margin-bottom:10px;}
+  .chart-card .chart-sub{font-size:12px;color:var(--ink-soft);}
   .chart-empty{color:var(--ink-soft);font-size:13px;text-align:center;padding:20px 0;}
 
   .row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
@@ -119,10 +133,40 @@
   .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
   .stat{background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-1);}
   .stat .top-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-  .stat .ic-badge{width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;}
   .stat .label{color:var(--ink-soft);font-size:12.5px;margin-bottom:2px;}
   .stat .value{font-size:20px;font-weight:700;}
+  /* shared icon badge — was .stat-only (.ic-badge), now also used by
+     chart-card headers so every Dashboard card reads as one family */
+  .card-icon,.stat .ic-badge{width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .section-title{font-size:13px;font-weight:600;color:var(--ink-soft);margin:20px 2px 10px 2px;display:flex;align-items:center;gap:6px;}
+
+  /* ---- rent-collected progress card + status pills ---- */
+  .progress-card{background:var(--surface);border-radius:var(--radius);padding:16px;margin-bottom:10px;box-shadow:var(--shadow-1);}
+  .progress-card.tap{cursor:pointer;}
+  .progress-card.tap:active{opacity:.85;}
+  .progress-card .phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;}
+  .progress-card .ptitle{display:flex;align-items:center;gap:10px;min-width:0;}
+  .progress-card .ptitle .t{font-size:13.5px;font-weight:600;color:var(--ink);}
+  .progress-card .ptitle .s{font-size:12px;color:var(--ink-soft);}
+  .progress-card .pct{font-size:22px;font-weight:800;color:var(--paid);font-variant-numeric:tabular-nums;flex-shrink:0;}
+  .progress-track{height:14px;border-radius:99px;background:var(--md-surface-variant);overflow:hidden;}
+  .progress-fill{height:100%;border-radius:99px;background:var(--paid);}
+  .glance-strip{display:flex;gap:8px;margin-bottom:14px;}
+  .glance-pill{flex:1;background:var(--surface);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow-1);text-align:center;cursor:pointer;}
+  .glance-pill .n{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .glance-pill .l{font-size:10.5px;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.03em;margin-top:1px;}
+
+  /* ---- list-in-card: replaces one full card per row for Top defaulters /
+     Partner balances / Recent activity, cutting scroll length ---- */
+  .list-card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow-1);overflow:hidden;margin-bottom:10px;}
+  .list-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);}
+  .list-row:last-child{border-bottom:none;}
+  .list-row.tap{cursor:pointer;}
+  .list-row.tap:active{opacity:.7;}
+  .list-row .lr-main{flex:1;min-width:0;}
+  .list-row .amt{font-weight:700;flex-shrink:0;}
+  .list-row .chevron{color:var(--ink-soft);flex-shrink:0;}
+  .view-all-row{display:flex;align-items:center;justify-content:center;gap:4px;padding:11px;color:var(--accent);font-weight:600;font-size:13px;cursor:pointer;background:var(--surface);}
 
   .chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:12.5px;font-weight:600;white-space:nowrap;}
   .chip.paid{background:var(--paid-bg);color:var(--paid);}
@@ -211,9 +255,12 @@
   @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
 
   .divider{height:1px;background:var(--line);margin:14px 0;}
-  .ledger-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;}
+  .ledger-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;}
   .ledger-row:last-child{border-bottom:none;}
   .ledger-row .l1{color:var(--ink-soft);font-size:12.5px;}
+  .ledger-row.tap{cursor:pointer;}
+  .ledger-row.tap:active{opacity:.7;}
+  .ledger-row .chevron{color:var(--ink-soft);flex-shrink:0;}
   .audit-row{font-size:12.5px;color:var(--ink-soft);padding:7px 0;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;}
   .warn-box{background:var(--partial-bg);color:var(--partial);border-radius:12px;padding:12px 14px;font-size:13px;margin-bottom:12px;display:flex;gap:8px;align-items:flex-start;}
   .toast{
@@ -666,12 +713,12 @@ const Repo = {
       if (x.type === "RENT_PAYMENT"){
         const via = receiverNamesFor(x.id);
         const viaLabel = via.length ? ` (via ${via.join(", ")})` : "";
-        events.push({date:x.date, type:"paid", label: (x.total_amount<0?"Refund / advance return":"Payment received") + viaLabel + (x.note?` — ${x.note}`:""), amount: x.total_amount});
-        if (x.repair_amount) events.push({date:x.date, type:"paid", label:"Repair deduction", amount: x.repair_amount});
+        events.push({id:x.id, date:x.date, type:"paid", label: (x.total_amount<0?"Refund / advance return":"Payment received") + viaLabel + (x.note?` — ${x.note}`:""), amount: x.total_amount});
+        if (x.repair_amount) events.push({id:x.id, date:x.date, type:"paid", label:"Repair deduction", amount: x.repair_amount});
       } else if (x.type === "ADJUSTMENT"){
         const amt = x.adjustment_amount||0;
         const defaultLabel = amt>=0 ? "Balance adjustment (added)" : "Balance adjustment (reduced)";
-        events.push({date:x.date, type: amt>=0?"due":"paid", label: x.note || defaultLabel, amount: Math.abs(amt)});
+        events.push({id:x.id, date:x.date, type: amt>=0?"due":"paid", label: x.note || defaultLabel, amount: Math.abs(amt)});
       }
     }
     events.sort((a,b)=> a.date.localeCompare(b.date));
@@ -1196,46 +1243,59 @@ Screens.dashboard = async function(){
   const partialCount = monthlyStatuses.filter(s=>s.status==="partial").length;
   const dueCount = monthlyStatuses.filter(s=>s.status==="due").length;
   const topDefaulters = defaulters.slice(0,3);
+  const dueThisMonth = monthlyStatuses.reduce((s,r)=>s+r.due,0);
+  const pctCollected = dueThisMonth>0.004 ? Math.min(100, Math.round((collected/dueThisMonth)*100)) : (collected>0.004?100:0);
   const html = `
     <div class="stat-grid">
       <div class="stat">
-        <div class="top-row"><div class="ic-badge">${ic("account_balance_wallet")}</div></div>
-        <div class="label">Total arrears</div><div class="value num">${fmtMoney(arrears)}</div>
+        <div class="top-row"><div class="card-icon" style="background:var(--due-bg);color:var(--due);">${ic("account_balance_wallet")}</div></div>
+        <div class="label">Total arrears</div><div class="value num" style="color:var(--due);">${fmtMoney(arrears)}</div>
       </div>
       <div class="stat">
-        <div class="top-row"><div class="ic-badge">${ic("payments")}</div></div>
-        <div class="label">Collected this month</div><div class="value num">${fmtMoney(collected)}</div>
+        <div class="top-row"><div class="card-icon" style="background:var(--paid-bg);color:var(--paid);">${ic("payments")}</div></div>
+        <div class="label">Collected this month</div><div class="value num" style="color:var(--paid);">${fmtMoney(collected)}</div>
       </div>
       <div class="stat">
-        <div class="top-row"><div class="ic-badge">${ic("savings")}</div></div>
+        <div class="top-row"><div class="card-icon">${ic("savings")}</div></div>
         <div class="label">Cash in hand (unsettled)</div><div class="value num">${fmtMoney(cashTotal)}</div>
       </div>
       <div class="stat">
-        <div class="top-row"><div class="ic-badge">${ic("apartment")}</div></div>
+        <div class="top-row"><div class="card-icon">${ic("apartment")}</div></div>
         <div class="label">Portfolio</div><div class="value">${portfolio.tenants} tenants · ${portfolio.properties} props</div>
       </div>
     </div>
 
     ${monthlyStatuses.length ? `
-    <div class="card tap" onclick="goTab('defaulters')">
-      <div class="row"><div class="name">This month, at a glance</div><span class="meta">${fmtMonth(monthKey())}</span></div>
-      <div class="month-summary" style="margin-top:6px;margin-bottom:0;">
-        <span style="color:var(--paid);font-weight:600;">${ic("check_circle")} ${paidCount} paid</span>
-        <span style="color:var(--partial);font-weight:600;">${ic("hourglass_top")} ${partialCount} partial</span>
-        <span style="color:var(--due);font-weight:600;">${ic("schedule")} ${dueCount} due</span>
+    <div class="progress-card tap" onclick="goTab('defaulters')">
+      <div class="phead">
+        <div class="ptitle">
+          <div class="card-icon" style="background:var(--paid-bg);color:var(--paid);">${ic("payments")}</div>
+          <div><div class="t">Rent collected — ${fmtMonth(monthKey())}</div><div class="s">${fmtMoney(collected)} of ${fmtMoney(dueThisMonth)} due this month</div></div>
+        </div>
+        <div class="pct">${pctCollected}%</div>
       </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pctCollected}%;"></div></div>
+    </div>
+    <div class="glance-strip">
+      <div class="glance-pill" onclick="goTab('defaulters')"><div class="n num" style="color:var(--paid);">${paidCount}</div><div class="l">Paid</div></div>
+      <div class="glance-pill" onclick="goTab('defaulters')"><div class="n num" style="color:var(--partial);">${partialCount}</div><div class="l">Partial</div></div>
+      <div class="glance-pill" onclick="goTab('defaulters')"><div class="n num" style="color:var(--due);">${dueCount}</div><div class="l">Due</div></div>
     </div>` : ""}
 
     <div class="chart-card">
-      <div class="chart-title">Collections trend</div>
-      <div class="chart-sub">Last 6 months, rent payments only</div>
+      <div class="chead">
+        <div class="card-icon">${ic("trending_up")}</div>
+        <div><div class="chart-title">Collections trend</div><div class="chart-sub">Last 6 months, rent payments only</div></div>
+      </div>
       ${trend.some(t=>t.value>0) ? svgBarChart(trend, {height:150}) : `<div class="chart-empty">No payments recorded yet</div>`}
     </div>
 
     ${arrearsByProp.length ? `
     <div class="chart-card">
-      <div class="chart-title">Arrears by property</div>
-      <div class="chart-sub">Where outstanding rent is concentrated</div>
+      <div class="chead">
+        <div class="card-icon">${ic("donut_large")}</div>
+        <div><div class="chart-title">Arrears by property</div><div class="chart-sub">Where outstanding rent is concentrated</div></div>
+      </div>
       <div class="chart-flex">
         ${svgDonut(arrearsByProp, {centerLabel:fmtMoney(arrears).replace("₹","₹\n")})}
         ${chartLegend(arrearsByProp)}
@@ -1244,47 +1304,53 @@ Screens.dashboard = async function(){
 
     ${topDefaulters.length ? `
     <div class="section-title">${ic("warning")}Top defaulters</div>
-    ${topDefaulters.map(t=>`
-      <div class="card tap" onclick="openTenantLedger('${t.id}')">
-        <div class="row">
-          <div><div class="name">${esc(t.name)}</div><div class="meta">${esc(t.property?t.property.name:"")}</div></div>
-          <span class="chip due num">${fmtMoney(t.current_balance)}</span>
-        </div>
-      </div>`).join("")}
-    ${defaulters.length > 3 ? `<button class="link-btn" onclick="goTab('defaulters')">${ic("chevron_right")}View all ${defaulters.length} defaulters</button>` : ""}
+    <div class="list-card">
+      ${topDefaulters.map(t=>`
+        <div class="list-row tap" onclick="openTenantLedger('${t.id}')">
+          <div class="card-icon" style="background:var(--due-bg);color:var(--due);">${ic("person")}</div>
+          <div class="lr-main"><div class="name">${esc(t.name)}</div><div class="meta">${esc(t.property?t.property.name:"")}</div></div>
+          <div class="amt num" style="color:var(--due);">${fmtMoney(t.current_balance)}</div>
+          <span class="msi chevron">chevron_right</span>
+        </div>`).join("")}
+      ${defaulters.length > 3 ? `<div class="view-all-row" onclick="goTab('defaulters')">${ic("chevron_right")}View all ${defaulters.length} defaulters</div>` : ""}
+    </div>
     ` : ""}
 
     ${partners.length ? `
     <div class="section-title">${ic("groups")}Partner balances</div>
-    ${partners.map(p=>{
-      const bal = p.running_balance||0;
-      const label = Math.abs(bal)<0.005 ? "Settled up" : bal>0 ? "Owed to them" : "Owes this out";
-      const color = Math.abs(bal)<0.005 ? "var(--ink-soft)" : bal>0 ? "var(--paid)" : "var(--due)";
-      return `
-      <div class="card tap" onclick="goTab('partners')">
-        <div class="row">
-          <div><div class="name">${esc(p.name)}</div><div class="meta">${p.share_percent}% share · ${label}</div></div>
-          <span class="num" style="font-weight:700;color:${color};">${fmtMoney(Math.abs(bal))}</span>
-        </div>
-      </div>`;
-    }).join("")}
+    <div class="list-card">
+      ${partners.map(p=>{
+        const bal = p.running_balance||0;
+        const label = Math.abs(bal)<0.005 ? "Settled up" : bal>0 ? "Owed to them" : "Owes this out";
+        const color = Math.abs(bal)<0.005 ? "var(--ink-soft)" : bal>0 ? "var(--paid)" : "var(--due)";
+        return `
+        <div class="list-row tap" onclick="goTab('partners')">
+          <div class="card-icon">${ic("account_circle")}</div>
+          <div class="lr-main"><div class="name">${esc(p.name)}</div><div class="meta">${p.share_percent}% share · ${label}</div></div>
+          <div class="amt num" style="color:${color};">${fmtMoney(Math.abs(bal))}</div>
+        </div>`;
+      }).join("")}
+    </div>
     ` : ""}
 
     <div class="section-title">${ic("history")}Recent activity</div>
-    ${recent.length ? recent.map(x=>{
-      const isAdj = x.type === "ADJUSTMENT";
-      const amt = isAdj ? (x.adjustment_amount||0) : x.total_amount;
-      return `
-      <div class="card tap" onclick="openTxnDetail('${x.id}')">
-        <div class="row">
-          <div>
+    ${recent.length ? `
+    <div class="list-card">
+      ${recent.map(x=>{
+        const isAdj = x.type === "ADJUSTMENT";
+        const amt = isAdj ? (x.adjustment_amount||0) : x.total_amount;
+        return `
+        <div class="list-row tap" onclick="openTxnDetail('${x.id}')">
+          <div class="card-icon" style="${isAdj?'':'background:var(--paid-bg);color:var(--paid);'}">${ic(isAdj?"tune":"payments")}</div>
+          <div class="lr-main">
             <div class="name">${esc(x.tenant?x.tenant.name:"—")}${x.is_voided?' <span class="chip due">Voided</span>':""}</div>
             <div class="meta">${isAdj?"Balance adjustment · ":""}${esc(x.property?x.property.name:"")} · ${fmtDate(x.date)}${x.receivedByNames&&x.receivedByNames.length?` · via ${esc(x.receivedByNames.join(", "))}`:""}</div>
           </div>
-          <div class="num" style="font-weight:700;color:${isAdj && amt<0 ? 'var(--paid)' : 'inherit'};">${amt<0&&isAdj?"−":""}${fmtMoney(Math.abs(amt))}</div>
-        </div>
-      </div>`;
-    }).join("") : `<div class="empty">${ic("receipt_long")}<div class="big">No payments recorded yet</div>Tap "Add payment" to log the first one.</div>`}
+          <div class="amt num" style="color:${isAdj && amt<0 ? 'var(--paid)' : 'inherit'};">${amt<0&&isAdj?"−":""}${fmtMoney(Math.abs(amt))}</div>
+          <span class="msi chevron">chevron_right</span>
+        </div>`;
+      }).join("")}
+    </div>` : `<div class="empty">${ic("receipt_long")}<div class="big">No payments recorded yet</div>Tap "Add payment" to log the first one.</div>`}
   `;
   Shell("myTenants", "Dashboard", html, {
     logoImg: "icons/header-logo.png",
@@ -1401,12 +1467,13 @@ Screens.tenantLedger = async function(){
     <div class="section-title">${ic("receipt_long")}Ledger</div>
     <div class="card">
       ${rows.length ? rows.map(r=>`
-        <div class="ledger-row">
+        <div class="ledger-row${r.id?' tap':''}"${r.id?` onclick="openTxnDetail('${r.id}')"`:""}>
           <div><div>${esc(r.label)}</div><div class="l1">${fmtDate(r.date)}</div></div>
           <div style="text-align:right;">
             <div class="num" style="color:${r.type==='due'?'var(--due)':'var(--paid)'};font-weight:600;">${r.type==='due'?'+':'−'}${fmtMoney(Math.abs(r.amount))}</div>
             <div class="l1 num">bal ${fmtMoney(r.running)}</div>
           </div>
+          ${r.id?`<span class="msi chevron">chevron_right</span>`:""}
         </div>`).join("") : `<div class="empty">No ledger activity yet.</div>`}
     </div>
     <button class="btn secondary" style="margin-top:6px;">
@@ -1631,7 +1698,10 @@ Screens.partners = async function(){
       <div class="card">
         <div class="row">
           <div><div class="name">${esc(r.name)}</div><div class="meta">${r.partner_id && partnerById[r.partner_id] ? "→ "+esc(partnerById[r.partner_id].name)+"'s pool" : "No partner linked"}</div></div>
-          <button class="link-btn danger-link" onclick="removeReceiver('${r.id}')">${ic("delete")}</button>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <button class="link-btn" onclick="openModal('editReceiver','${r.id}')">${ic("edit")}Edit</button>
+          <button class="link-btn danger-link" onclick="removeReceiver('${r.id}')">${ic("delete")}Remove</button>
         </div>
       </div>`).join("") : `<div class="empty">No receivers yet.</div>`}
     <button class="btn secondary" onclick="openModal('addReceiver')">${ic("add")}Add receiver</button>
@@ -1931,6 +2001,22 @@ async function saveReceiver(){
   const name = document.getElementById("m-name").value.trim();
   if (!name) return toast("Enter a receiver name");
   await Repo.addReceiver({name, partner_id: document.getElementById("m-partner").value || null});
+  closeModal(); render();
+}
+Modals.editReceiver = async (id, root) => {
+  const r = await get("receivers", id);
+  const partners = await Repo.allPartners();
+  root.innerHTML = modalShell("Edit receiver", `
+    <label>Receiver name</label><input id="m-name" type="text" value="${esc(r.name)}">
+    <label>Reports cash into which partner's pool?</label>
+    <select id="m-partner"><option value="">No partner (unlinked)</option>${partners.map(p=>`<option value="${p.id}" ${r.partner_id===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}</select>
+    <button class="btn" style="margin-top:16px;" onclick="updateReceiverSave('${r.id}')">Save changes</button>
+  `);
+};
+async function updateReceiverSave(id){
+  const name = document.getElementById("m-name").value.trim();
+  if (!name) return toast("Enter a receiver name");
+  await Repo.updateReceiver(id, {name, partner_id: document.getElementById("m-partner").value || null});
   closeModal(); render();
 }
 
@@ -2374,6 +2460,7 @@ async function openAddPayment(prefillTenantId){
 
         <label>Date</label>
         <input id="ap-date" type="date" value="${todayISO()}">
+        <div class="meta" style="margin-top:4px;">Also decides which month this counts toward in Defaulters/Monthly view — pick an earlier date if this was a late payment for a prior month.</div>
 
         ${receiverPickerHtml(receivers, partnerById)}
 
@@ -2522,6 +2609,7 @@ async function openEditPayment(id){
 
         <label>Date</label>
         <input id="ap-date" type="date" value="${txn.date}">
+        <div class="meta" style="margin-top:4px;">Also decides which month this counts toward in Defaulters/Monthly view — pick an earlier date if this was a late payment for a prior month.</div>
 
         ${receiverPickerHtml(receivers, partnerById, {multi:isMulti, singleSelectedId: !isMulti && splits[0] ? splits[0].receiver_id : ""})}
 
