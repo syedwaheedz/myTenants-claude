@@ -1814,6 +1814,8 @@ Screens.partners = async function(){
   const shareData = partners.filter(p=>p.share_percent>0).map(p=>({label:p.name, value:p.share_percent}));
   const syncCard = await cloudSyncCardHtml();
   const adminCard = await allowlistAdminCardHtml();
+  const bulkLocked = await syncMetaGet("bulk_setup_locked");
+  const signedIn = !!(await syncMetaGet("org_id"));
   const html = `
     ${syncCard}
     ${adminCard}
@@ -1851,15 +1853,17 @@ Screens.partners = async function(){
     <button class="btn secondary" onclick="openModal('addReceiver')">${ic("add")}Add receiver</button>
 
     <div class="section-title">${ic("cloud_upload")}Backup & move to a new version</div>
-    <div class="meta" style="margin-bottom:10px;">Your data lives only in this browser. Export a backup regularly, and use it to bring everything over whenever you update this app's file, switch browsers, or move to a different device.</div>
+    <div class="meta" style="margin-bottom:10px;">${signedIn
+      ? "Signed in, so this data also syncs to the cloud automatically — but export a backup regularly anyway as an extra safety net, and it's still how you'd bring everything over to a browser or device that isn't signed in."
+      : "Your data lives only in this browser. Export a backup regularly, and use it to bring everything over whenever you update this app's file, switch browsers, or move to a different device."}</div>
     <button class="btn ghost" onclick="Repo.exportDatabaseCopy()">${ic("download")}Export backup (.json)</button>
     <div style="height:10px;"></div>
     <label>Restore from backup</label>
     <input type="file" accept="application/json" onchange="importBackup(event)">
 
-    <div class="section-title">${ic("playlist_add")}One-time setup</div>
-    <div class="meta" style="margin-bottom:10px;">New here and bringing in old balances or payments from before this app? Do it for every tenant in one pass instead of one at a time.</div>
-    <button class="btn ghost" onclick="State.tab='bulkSetup'; render();">${ic("playlist_add")}Bulk add opening balances / payments</button>
+    <div class="section-title">${ic(bulkLocked?"lock":"playlist_add")}One-time setup</div>
+    <div class="meta" style="margin-bottom:10px;">${bulkLocked ? "Locked to prevent accidentally re-entering old data — open it to unlock." : "New here and bringing in old balances or payments from before this app? Do it for every tenant in one pass instead of one at a time."}</div>
+    <button class="btn ghost" onclick="State.tab='bulkSetup'; render();">${ic(bulkLocked?"lock":"playlist_add")}${bulkLocked ? "One-time setup (locked)" : "Bulk add opening balances / payments"}</button>
   `;
   Shell("Manage partners", null, html);
 };
@@ -1893,6 +1897,15 @@ async function importBackup(ev){
 
 // ---------- Bulk one-time setup (old balances / payments, all at once) ----------
 Screens.bulkSetup = async function(){
+  const locked = await syncMetaGet("bulk_setup_locked");
+  if (locked){
+    Shell("One-time setup", null, `
+      <button class="back-btn" onclick="goTab('partners')">${ic("arrow_back")}Manage partners</button>
+      <div class="empty">${ic("lock")}<div class="big">Locked</div>This one-time setup tool has been locked to prevent accidentally re-entering old balances or payments a second time. Unlock it if you still need to add more.</div>
+      <button class="btn secondary" style="margin-top:14px;" onclick="unlockBulkSetup()">${ic("lock_open")}Unlock</button>
+    `);
+    return;
+  }
   const tenants = await Repo.allTenantsWithProperty();
   const receivers = await Repo.allReceivers();
   const active = tenants.filter(t=>!t.archived);
@@ -1902,45 +1915,47 @@ Screens.bulkSetup = async function(){
     <button class="back-btn" onclick="goTab('partners')">${ic("arrow_back")}Manage partners</button>
     <div class="card">
       <div class="name">One-time setup</div>
-      <div class="meta" style="margin-top:4px;">For each tenant, optionally add an opening balance (what they owed before this app) and/or a payment (what they've already paid) — leave either blank to skip. Needs repair deductions, split receivers, or a different date per tenant? Use the normal Add Payment / Adjust Balance screens for those instead.</div>
+      <div class="meta" style="margin-top:4px;">For each tenant, optionally add an opening balance (what they owed before this app) and/or a payment (what they've already paid, and who collected it) — leave any of it blank to skip. Needs a repair deduction, a payment split across more than one receiver, or a different date per tenant? Use the normal Add Payment / Adjust Balance screens for those instead.</div>
     </div>
-    <label>As of date</label>
+    <label>As of date (applies to every entry below)</label>
     <input id="bulk-date" type="date" value="${todayISO()}">
-    <label>Received by (applies to every payment below)</label>
-    <select id="bulk-receiver"><option value="">Not specified</option>${receivers.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select>
     ${Object.entries(byProperty).map(([propName, rows])=>`
       <div class="section-title">${ic("apartment")}${esc(propName)}</div>
       <div class="list-card">
         ${rows.map(t=>`
-          <div class="list-row">
+          <div class="list-row" style="flex-direction:column;align-items:stretch;gap:8px;">
             <div class="lr-main">
               <div class="name">${esc(t.name)}</div>
               <div class="meta">Currently ${fmtMoney(t.current_balance||0)}</div>
             </div>
-            <div style="width:110px;">
-              <input id="bulk-adj-${t.id}" type="number" step="0.01" placeholder="Owed">
-            </div>
-            <div style="width:110px;">
-              <input id="bulk-pay-${t.id}" type="number" step="0.01" placeholder="Payment">
+            <div style="display:flex;gap:8px;">
+              <input id="bulk-adj-${t.id}" type="number" step="0.01" placeholder="Owed" style="flex:1;min-width:0;">
+              <input id="bulk-pay-${t.id}" type="number" step="0.01" placeholder="Payment" style="flex:1;min-width:0;">
+              <select id="bulk-receiver-${t.id}" style="flex:1.2;min-width:0;">
+                <option value="">Receiver</option>
+                ${receivers.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}
+              </select>
             </div>
           </div>`).join("")}
       </div>
     `).join("")}
     <button class="btn" style="margin-top:10px;" onclick="submitBulkSetup()">${ic("playlist_add")}Save all</button>
+    <button class="btn ghost" style="margin-top:8px;" onclick="lockBulkSetupConfirm()">${ic("lock")}Lock this screen (done with one-time setup)</button>
   `;
   Shell("One-time setup", null, html);
 };
 async function submitBulkSetup(){
   const tenants = (await Repo.allTenantsWithProperty()).filter(t=>!t.archived);
   const date = document.getElementById("bulk-date").value || todayISO();
-  const receiver_id = document.getElementById("bulk-receiver").value || null;
   const rows = [];
   for (const t of tenants){
     const adjEl = document.getElementById(`bulk-adj-${t.id}`);
     const payEl = document.getElementById(`bulk-pay-${t.id}`);
+    const receiverEl = document.getElementById(`bulk-receiver-${t.id}`);
     const adj = adjEl && adjEl.value ? Number(adjEl.value) : 0;
     const pay = payEl && payEl.value ? Number(payEl.value) : 0;
-    if (adj || pay) rows.push({tenant: t, adj, pay});
+    const receiver_id = receiverEl && receiverEl.value ? receiverEl.value : null;
+    if (adj || pay) rows.push({tenant: t, adj, pay, receiver_id});
   }
   if (!rows.length) return toast("Enter at least one opening balance or payment");
   const adjCount = rows.filter(r=>r.adj).length;
@@ -1948,12 +1963,22 @@ async function submitBulkSetup(){
   const total = rows.reduce((s,r)=>s+Math.abs(r.adj)+Math.abs(r.pay), 0);
   const proceed = confirm(`Record ${adjCount} opening balance${adjCount===1?"":"s"} and ${payCount} payment${payCount===1?"":"s"}, ${fmtMoney(total)} total?\n\nThis creates real ledger entries — each one can be edited or voided afterward like any other, but this bulk pass itself can't be undone as a whole.`);
   if (!proceed) return;
-  for (const {tenant, adj, pay} of rows){
+  for (const {tenant, adj, pay, receiver_id} of rows){
     if (adj) await Repo.recordBalanceAdjustment({tenant_id: tenant.id, amount: adj, note: "Bulk setup entry — opening balance", date});
     if (pay) await Repo.recordRentPayment({tenant_id: tenant.id, total_amount: pay, date, splits: receiver_id ? [{receiver_id, amount: pay}] : []});
   }
   toast(`Saved ${adjCount + payCount} entries`);
   goTab("partners");
+}
+async function lockBulkSetupConfirm(){
+  if (!confirm("Lock this one-time setup tool? You can unlock it again later if you need to add more historical entries.")) return;
+  await syncMetaSet("bulk_setup_locked", true);
+  toast("Locked");
+  render();
+}
+async function unlockBulkSetup(){
+  await syncMetaSet("bulk_setup_locked", false);
+  render();
 }
 
 // ---------- navigation helpers ----------
