@@ -1944,8 +1944,9 @@ Screens.bulkSetup = async function(){
       <div class="name">One-time setup</div>
       <div class="meta" style="margin-top:4px;">For each tenant, optionally add an opening balance (what they owed before this app) and/or a payment (what they've already paid, and who collected it) — leave any of it blank to skip. Needs a repair deduction, a payment split across more than one receiver, or a different date per tenant? Use the normal Add Payment / Adjust Balance screens for those instead.</div>
     </div>
-    <label>As of date (applies to every entry below)</label>
-    <input id="bulk-date" type="date" value="${todayISO()}">
+    <label>Date to record these as (applies to every entry below)</label>
+    <input id="bulk-date" type="date" value="${addMonths(monthKey(), -1)}-28">
+    <div class="meta" style="margin:4px 0 10px;">This is historical catch-up, so it defaults to a date before this month — every screen in the app (Dashboard, monthly status, reports) reads a transaction's date to decide which month it counts toward. If you leave this set to the current month, these payments will show as this month's rent collected, even if the money actually came in earlier.</div>
     ${Object.entries(byProperty).map(([propName, rows])=>`
       <div class="section-title">${ic("apartment")}${esc(propName)}</div>
       <div class="list-card">
