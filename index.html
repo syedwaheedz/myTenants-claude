@@ -2296,7 +2296,12 @@ async function exportMonthlyReportPdf(){
   const data = await buildMonthlyReportData(mk);
   document.getElementById("report-print-root").innerHTML = buildMonthlyReportHtml(data);
   closeModal();
-  setTimeout(() => window.print(), 150);
+  setTimeout(() => {
+    // Android's WebView never implements window.print() (silent no-op) —
+    // use the NativePrint plugin's Android PrintManager bridge instead.
+    if (isNativeApp()) window.Capacitor.Plugins.NativePrint.print({ jobName: `myTenants-${mk}` });
+    else window.print();
+  }, 150);
 }
 
 // ---- Add Payment (full screen bottom sheet) ----
