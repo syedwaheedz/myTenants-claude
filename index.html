@@ -1623,9 +1623,9 @@ Screens.defaulters = async function(){
           <div><div class="name">${esc(t.name)}</div><div class="meta">${esc(t.property?t.property.name:"")}</div></div>
           <span class="chip due num">${fmtMoney(t.current_balance)}</span>
         </div>
-        <div style="display:flex;gap:8px;margin-top:10px;">
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
           <button class="btn secondary small" style="flex:1;" onclick="event.stopPropagation(); openAddPayment('${t.id}')">${ic("payments")}Record payment</button>
-          <button class="btn small" style="flex:1;background:#25D366;" onclick="event.stopPropagation(); requestPaymentViaWhatsApp('${t.id}')">${ic("chat")}WhatsApp</button>
+          <button class="icon-btn" style="background:#25D366;color:#fff;" onclick="event.stopPropagation(); requestPaymentViaWhatsApp('${t.id}')" title="Send WhatsApp reminder">${ic("chat")}</button>
         </div>
       </div>`).join("") : `<div class="empty">${ic("celebration")}<div class="big">No defaulters</div>Everyone's paid up.</div>`}
   `;
