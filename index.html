@@ -16,6 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..600,0..1,-50..200&display=block" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
 <style>
   :root{
     /* ---- Material 3 tokens (custom teal seed) ---- */
@@ -357,7 +358,7 @@
    ========================================================================= */
 
 const DB_NAME = "mytenants";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORES = ["properties","tenants","partners","receivers","transactions","transaction_splits","partner_settlements","partner_transfers","audit_log"];
 const PALETTE = ["#2F6B5E","#B3402A","#9A6B00","#3B6EA5","#7E57C2","#4B635B","#C2410C","#0E7490"];
 
@@ -369,6 +370,7 @@ const fmtMoney = (n) => "₹" + (Math.round((n||0)*100)/100).toLocaleString("en-
 const fmtMonth = (mk) => { if(!mk) return "—"; const [y,m]=mk.split("-"); return new Date(y, m-1, 1).toLocaleDateString("en-IN",{month:"short",year:"numeric"}); };
 const fmtMonthShort = (mk) => { const [y,m]=mk.split("-"); return new Date(y, m-1, 1).toLocaleDateString("en-IN",{month:"short"}); };
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "—";
+const fmtDateTime = (d) => d ? new Date(d).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "—";
 const esc = (s) => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const addMonths = (mk, n) => { const [y,m]=mk.split("-").map(Number); const d=new Date(y, m-1+n, 1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); };
 const monthsBetween = (a,b) => { const [ay,am]=a.split("-").map(Number); const [by,bm]=b.split("-").map(Number); return (by-ay)*12+(bm-am); };
@@ -455,6 +457,11 @@ function openDB(){
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
       STORES.forEach(name => { if(!db.objectStoreNames.contains(name)) db.createObjectStore(name, {keyPath:"id"}); });
+      // Sync support (additive, v3): a queue of local changes waiting to be
+      // pushed to Supabase, and small key/value bookkeeping (per-store pull
+      // cursors, the signed-in org_id).
+      if (!db.objectStoreNames.contains("sync_outbox")) db.createObjectStore("sync_outbox", {keyPath:"seq", autoIncrement:true});
+      if (!db.objectStoreNames.contains("sync_meta")) db.createObjectStore("sync_meta", {keyPath:"key"});
     };
     req.onsuccess = () => { _db = req.result; resolve(_db); };
     req.onerror = () => reject(req.error);
@@ -471,8 +478,28 @@ function tx(store, mode, fn){
 }
 function getAll(store){ return new Promise((res,rej)=>{ const t=_db.transaction(store,"readonly"); const r=t.objectStore(store).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 function get(store, id){ return new Promise((res,rej)=>{ const t=_db.transaction(store,"readonly"); const r=t.objectStore(store).get(id); r.onsuccess=()=>res(r.result||null); r.onerror=()=>rej(r.error); }); }
-function put(store, obj){ return tx(store,"readwrite", s => s.put(obj)); }
-function del(store, id){ return tx(store,"readwrite", s => s.delete(id)); }
+function nowIso(){ return new Date().toISOString(); }
+// Every write to a syncable store also stamps updatedAt and queues a
+// sync_outbox entry — this is the only place that needs to know sync
+// exists at all; every screen/Repo method keeps calling put()/del() as
+// before. sync_meta/sync_outbox themselves are excluded (not in STORES)
+// so this can't recurse into syncing its own bookkeeping.
+function put(store, obj){
+  if (STORES.includes(store)) obj.updatedAt = nowIso();
+  return tx(store,"readwrite", s => s.put(obj)).then(result => {
+    if (STORES.includes(store)) return enqueueOutbox(store, obj.id, "upsert").then(()=>result);
+    return result;
+  });
+}
+function del(store, id){
+  return tx(store,"readwrite", s => s.delete(id)).then(result => {
+    if (STORES.includes(store)) return enqueueOutbox(store, id, "delete").then(()=>result);
+    return result;
+  });
+}
+function enqueueOutbox(store, id, op){
+  return tx("sync_outbox","readwrite", s => s.add({store, id, op, queuedAt:nowIso()}));
+}
 
 // ---- Native file save/share (Capacitor Android shell only) ----
 // The Android WebView doesn't support <a download> for blob/data URLs or the
@@ -1667,12 +1694,58 @@ async function submitSettlement(){
 }
 
 // ---------- Partners ----------
+async function cloudSyncCardHtml(){
+  const orgId = await syncMetaGet("org_id");
+  const email = await syncMetaGet("user_email");
+  const lastSynced = await syncMetaGet("last_synced_at");
+  const signedIn = !!(orgId && email);
+  return `
+    <div class="section-title">${ic("cloud_sync")}Cloud sync</div>
+    <div class="card">
+      ${signedIn ? `
+        <div class="row">
+          <div><div class="name">${esc(email)}</div><div class="meta">Last synced: ${lastSynced?fmtDateTime(lastSynced):"not yet"}</div></div>
+          <span class="chip paid">${ic("check_circle")}Signed in</span>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="link-btn" onclick="manualSyncNow()">${ic("sync")}Sync now</button>
+          <button class="link-btn danger-link" onclick="confirmSignOutSync()">${ic("logout")}Sign out</button>
+        </div>
+      ` : `
+        <div class="meta" style="margin-bottom:10px;">Sign in to keep this data in sync across your devices. Skip this and the app keeps working exactly as it does now, purely on this device.</div>
+        <label>Email</label>
+        <input id="sync-email" type="email" placeholder="you@example.com">
+        <button class="btn secondary" style="margin-top:10px;" onclick="submitSignIn()">${ic("mail")}Send magic link</button>
+      `}
+    </div>
+  `;
+}
+async function submitSignIn(){
+  const email = document.getElementById("sync-email").value.trim();
+  if (!email) return toast("Enter an email address");
+  try{ await signInWithEmail(email); toast("Check your email for the sign-in link"); }
+  catch(e){ toast(e.message || "Couldn't send the sign-in link"); }
+}
+async function manualSyncNow(){
+  toast("Syncing…");
+  await syncNow();
+  render();
+  toast("Synced");
+}
+async function confirmSignOutSync(){
+  if (!confirm("Sign out of cloud sync? This device keeps its data — signing back in will pick sync back up.")) return;
+  await signOutSync();
+  render();
+}
+
 Screens.partners = async function(){
   const {ok, sum, partners} = await Repo.validateShares();
   const receivers = await Repo.allReceivers();
   const partnerById = Object.fromEntries(partners.map(p=>[p.id,p]));
   const shareData = partners.filter(p=>p.share_percent>0).map(p=>({label:p.name, value:p.share_percent}));
+  const syncCard = await cloudSyncCardHtml();
   const html = `
+    ${syncCard}
     ${!ok && partners.length ? `<div class="warn-box">${ic("warning")}Shares add up to ${sum}% — they should total 100%.</div>` : ""}
     ${shareData.length>1 ? `<div class="chart-card">
       <div class="chart-title">Share of the pool</div>
@@ -2714,11 +2787,140 @@ Object.assign(window, {
   openTxnDetail, openEditTxn, openEditPayment, submitEditPayment, openEditAdjustment, submitEditAdjustment, voidTxnConfirm, deleteTxnPermanentlyConfirm, submitSettlement, toggleTransferPaid, refreshTransferNote, Repo, State
 });
 
+// =====================================================================
+// Cloud sync (Supabase) — entirely additive. Local-first: every write
+// already lands in IndexedDB immediately via put()/del() above, online
+// or offline. This layer only drains the sync_outbox queue those two
+// functions fill, and pulls down anything newer from Supabase, once
+// signed in. Never signing in leaves the app exactly as it's always
+// been — pure local storage.
+//
+// "org" = the shared dataset a signed-in user's data lives under. For
+// this pass, org_id defaults to the signing-in user's own uid (a
+// personal workspace) — a memberships table is still used and seeded
+// with that self-row, so a real invite flow can extend this later
+// without changing the sync/RLS model, just who else gets added.
+// =====================================================================
+const SUPABASE_URL = "https://jaisbkvgyrcqnsurctnk.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_l4tyjmIE2MIyTESwawLa7A_HO8tFwXp";
+
+let _supabaseClient = null;
+function supabaseClient(){
+  if (!_supabaseClient && window.supabase) _supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return _supabaseClient;
+}
+async function syncMetaGet(key){ const row = await get("sync_meta", key); return row ? row.value : null; }
+function syncMetaSet(key, value){ return tx("sync_meta","readwrite", s => s.put({key, value})); }
+
+async function ensureMembership(userId){
+  const sb = supabaseClient();
+  const { data } = await sb.from("memberships").select("org_id").eq("user_id", userId).limit(1);
+  if (!data || !data.length) await sb.from("memberships").insert({ user_id: userId, org_id: userId });
+}
+
+async function signInWithEmail(email){
+  const sb = supabaseClient();
+  if (!sb) throw new Error("Cloud sync isn't available right now — check your connection and try again.");
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+  if (error) throw error;
+}
+async function signOutSync(){
+  const sb = supabaseClient();
+  if (sb) await sb.auth.signOut();
+  await syncMetaSet("org_id", null);
+  await syncMetaSet("user_email", null);
+}
+async function currentSyncSession(){
+  const sb = supabaseClient();
+  if (!sb) return null;
+  const { data } = await sb.auth.getUser();
+  return data && data.user ? data.user : null;
+}
+
+// Drains queued local changes up to Supabase, oldest first. Stops (rather
+// than skipping) on the first failure so a transient network error doesn't
+// silently drop entries out of order — it'll retry the same entry next pass.
+async function pushOutbox(){
+  const orgId = await syncMetaGet("org_id");
+  const sb = supabaseClient();
+  if (!orgId || !sb) return;
+  const entries = await getAll("sync_outbox");
+  for (const entry of entries){
+    try{
+      if (entry.op === "delete"){
+        const { error } = await sb.from(entry.store).delete().eq("id", entry.id).eq("org_id", orgId);
+        if (error) throw error;
+      } else {
+        const row = await get(entry.store, entry.id);
+        if (row){
+          const { error } = await sb.from(entry.store).upsert({ id: row.id, org_id: orgId, data: row, updated_at: row.updatedAt || nowIso() });
+          if (error) throw error;
+        }
+      }
+      await tx("sync_outbox","readwrite", s => s.delete(entry.seq));
+    } catch(e){
+      console.error("pushOutbox: stopped on", entry, e);
+      break;
+    }
+  }
+}
+
+// Pulls anything changed remotely since each store's last-seen cursor and
+// merges it into IndexedDB directly via tx() (not put()/del()) — applying
+// a remote change must not re-queue it as a local change to push back up.
+async function pullRemote(){
+  const orgId = await syncMetaGet("org_id");
+  const sb = supabaseClient();
+  if (!orgId || !sb) return;
+  for (const store of STORES){
+    const cursorKey = "cursor:" + store;
+    const cursor = (await syncMetaGet(cursorKey)) || "1970-01-01T00:00:00.000Z";
+    const { data, error } = await sb.from(store).select("id, data, updated_at, deleted")
+      .eq("org_id", orgId).gt("updated_at", cursor).order("updated_at", { ascending: true });
+    if (error){ console.error("pullRemote failed for", store, error); continue; }
+    if (!data || !data.length) continue;
+    for (const row of data){
+      if (row.deleted) await tx(store,"readwrite", s => s.delete(row.id));
+      else await tx(store,"readwrite", s => s.put({ ...row.data, id: row.id, updatedAt: row.updated_at }));
+    }
+    await syncMetaSet(cursorKey, data[data.length-1].updated_at);
+  }
+}
+
+let _syncing = false;
+async function syncNow(){
+  if (_syncing) return;
+  _syncing = true;
+  try{
+    await pushOutbox();
+    await pullRemote();
+    await syncMetaSet("last_synced_at", nowIso());
+  } catch(e){ console.error("sync failed", e); }
+  finally{ _syncing = false; }
+  if (State.tab === "partners") render();
+}
+
+async function initSync(){
+  const sb = supabaseClient();
+  if (!sb) return; // offline on first load, or the CDN script didn't load — sync just stays off
+  const user = await currentSyncSession();
+  if (user){
+    await ensureMembership(user.id);
+    await syncMetaSet("org_id", user.id);
+    await syncMetaSet("user_email", user.email);
+    await syncNow();
+    render();
+  }
+  window.addEventListener("online", syncNow);
+  setInterval(syncNow, 45000);
+}
+
 // ---------- init ----------
 (async function init(){
   await openDB();
   await Repo.runDueAccruals();
   render();
+  initSync();
 })();
 
 // Register the service worker so the app shell works once installed, even
