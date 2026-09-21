@@ -113,6 +113,8 @@
     transition:transform .08s ease;
   }
   .icon-btn:active{transform:scale(.92);}
+  .icon-btn.spinning .msi{animation:spin .7s linear infinite;}
+  @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
   .content{padding:4px 16px 24px 16px;}
 
   /* ---- Cards (Material elevated card) ---- */
@@ -1694,25 +1696,37 @@ async function submitSettlement(){
 }
 
 // ---------- Partners ----------
-async function cloudSyncCardHtml(){
+async function syncStatus(){
   const orgId = await syncMetaGet("org_id");
   const email = await syncMetaGet("user_email");
-  const lastSynced = await syncMetaGet("last_synced_at");
   const signedIn = !!(orgId && email);
+  const online = navigator.onLine;
+  const pending = (await getAll("sync_outbox")).length;
+  if (!online) return { signedIn, email, label:"Offline", chipClass:"due", icon:"cloud_off" };
+  if (_syncing) return { signedIn, email, label:"Syncing…", chipClass:"partial", icon:"sync" };
+  if (!signedIn) return { signedIn, email, label:"Local only", chipClass:"neutral", icon:"smartphone" };
+  if (pending > 0) return { signedIn, email, label:`${pending} pending`, chipClass:"partial", icon:"cloud_upload" };
+  return { signedIn, email, label:"Synced", chipClass:"paid", icon:"cloud_done" };
+}
+async function cloudSyncCardHtml(){
+  const lastSynced = await syncMetaGet("last_synced_at");
+  const status = await syncStatus();
   return `
     <div class="section-title">${ic("cloud_sync")}Cloud sync</div>
     <div class="card">
-      ${signedIn ? `
-        <div class="row">
-          <div><div class="name">${esc(email)}</div><div class="meta">Last synced: ${lastSynced?fmtDateTime(lastSynced):"not yet"}</div></div>
-          <span class="chip paid">${ic("check_circle")}Signed in</span>
+      <div class="row">
+        <span class="chip ${status.chipClass}">${ic(status.icon)}${status.label}</span>
+        <button id="sync-refresh-btn" class="icon-btn" style="width:32px;height:32px;box-shadow:none;background:var(--surface);" onclick="manualSyncNow()" title="Sync now">${ic("refresh")}</button>
+      </div>
+      ${status.signedIn ? `
+        <div class="row" style="margin-top:10px;">
+          <div><div class="name">${esc(status.email)}</div><div class="meta">Last synced: ${lastSynced?fmtDateTime(lastSynced):"not yet"}</div></div>
         </div>
         <div class="row" style="margin-top:10px;">
-          <button class="link-btn" onclick="manualSyncNow()">${ic("sync")}Sync now</button>
           <button class="link-btn danger-link" onclick="confirmSignOutSync()">${ic("logout")}Sign out</button>
         </div>
       ` : `
-        <div class="meta" style="margin-bottom:10px;">Sign in to keep this data in sync across your devices. Skip this and the app keeps working exactly as it does now, purely on this device.</div>
+        <div class="meta" style="margin:10px 0;">Sign in to keep this data in sync across your devices. Skip this and the app keeps working exactly as it does now, purely on this device.</div>
         <label>Email</label>
         <input id="sync-email" type="email" placeholder="you@example.com">
         <button class="btn secondary" style="margin-top:10px;" onclick="submitSignIn()">${ic("mail")}Send magic link</button>
@@ -1727,7 +1741,9 @@ async function submitSignIn(){
   catch(e){ toast(e.message || "Couldn't send the sign-in link"); }
 }
 async function manualSyncNow(){
-  toast("Syncing…");
+  if (!navigator.onLine){ toast("You're offline — nothing to sync right now"); return; }
+  const btn = document.getElementById("sync-refresh-btn");
+  if (btn){ btn.disabled = true; btn.classList.add("spinning"); }
   await syncNow();
   render();
   toast("Synced");
