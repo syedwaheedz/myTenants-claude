@@ -564,3 +564,98 @@ test("computeSettlement's detailed breakdown (byProperty/byReceiver/byMonth/owne
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+test("computeSettlement's per-partner owner-rent reconciliation matches a hand-worked example", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const alice = await Repo.addPartner({ name: "Alice", share_percent: 50 });
+      const bob = await Repo.addPartner({ name: "Bob", share_percent: 50 });
+      const rAlice = await Repo.addReceiver({ name: "RAlice", partner_id: alice.id });
+      const rBob = await Repo.addReceiver({ name: "RBob", partner_id: bob.id });
+      // P1 has the owner-rent obligation and is collected entirely by Alice's
+      // receiver; P2 has none and is collected entirely by Bob's.
+      const p1 = await Repo.addProperty({ name: "P1", owner_rent_amount: 30000 });
+      const p2 = await Repo.addProperty({ name: "P2" });
+      const t1 = await Repo.addTenant({ property_id: p1.id, name: "T1", monthly_rent: 100000 });
+      const t2 = await Repo.addTenant({ property_id: p2.id, name: "T2", monthly_rent: 100000 });
+      await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 80000, date: mk + "-05", splits: [{ receiver_id: rAlice.id, amount: 80000 }] });
+      await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 50000, date: mk + "-05", splits: [{ receiver_id: rBob.id, amount: 50000 }] });
+
+      const computed = await Repo.computeSettlement(mk);
+      return { computed, aliceId: alice.id, bobId: bob.id };
+    });
+    const c = result.computed;
+    assert.equal(c.grossCollected, 130000);
+    assert.equal(c.ownerRentTotal, 30000);
+    assert.equal(c.finalTotal, 100000);
+
+    const alice = c.rows.find(r => r.partner_id === result.aliceId);
+    const bob = c.rows.find(r => r.partner_id === result.bobId);
+    assert.equal(alice.ownerRentResponsibility, 30000, "Alice's receiver collected the only owner-rent property, so she's on the hook for all of it");
+    assert.equal(alice.availableAfterOwnerRent, 50000, "80000 collected - 30000 owner rent = 50000, matching her 50% share");
+    assert.equal(bob.ownerRentResponsibility, 0, "Bob collected nothing from the owner-rent property");
+    assert.equal(bob.availableAfterOwnerRent, 50000, "unaffected — equals his own collected amount");
+
+    assert.equal(c.ownerRentUnattributed, 0);
+    const sumResponsibility = c.rows.reduce((s, r) => s + r.ownerRentResponsibility, 0);
+    assert.ok(Math.abs(sumResponsibility + c.ownerRentUnattributed - c.ownerRentTotal) < 0.01, "responsibility + unattributed must sum to the total owner rent deduction");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("computeSettlement allocates one property's owner rent proportionally when multiple partners collected it", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const alice = await Repo.addPartner({ name: "Alice", share_percent: 50 });
+      const bob = await Repo.addPartner({ name: "Bob", share_percent: 50 });
+      const rAlice = await Repo.addReceiver({ name: "RAlice", partner_id: alice.id });
+      const rBob = await Repo.addReceiver({ name: "RBob", partner_id: bob.id });
+      const prop = await Repo.addProperty({ name: "Shared Prop", owner_rent_amount: 300 });
+      const tenant = await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 10000 });
+      // Same property, same month, split across both partners' receivers: 800/200.
+      await Repo.recordRentPayment({ tenant_id: tenant.id, total_amount: 800, date: mk + "-05", splits: [{ receiver_id: rAlice.id, amount: 800 }] });
+      await Repo.recordRentPayment({ tenant_id: tenant.id, total_amount: 200, date: mk + "-06", splits: [{ receiver_id: rBob.id, amount: 200 }] });
+
+      const computed = await Repo.computeSettlement(mk);
+      return { computed, aliceId: alice.id, bobId: bob.id };
+    });
+    const c = result.computed;
+    const alice = c.rows.find(r => r.partner_id === result.aliceId);
+    const bob = c.rows.find(r => r.partner_id === result.bobId);
+    // 300 owner rent split 800:200 (i.e. 80%/20%) between Alice and Bob.
+    assert.equal(alice.ownerRentResponsibility, 240);
+    assert.equal(bob.ownerRentResponsibility, 60);
+    assert.equal(alice.availableAfterOwnerRent, 560, "800 collected - 240 owner rent");
+    assert.equal(bob.availableAfterOwnerRent, 140, "200 collected - 60 owner rent");
+    assert.equal(c.ownerRentUnattributed, 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("computeSettlement leaves owner rent unattributed (not silently 0) when a property has zero collections this period", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const alice = await Repo.addPartner({ name: "Alice", share_percent: 100 });
+      await Repo.addReceiver({ name: "RAlice", partner_id: alice.id });
+      // Owner-rent property with a tenant who hasn't paid anything this period.
+      const prop = await Repo.addProperty({ name: "Unpaid Prop", owner_rent_amount: 500 });
+      await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 5000 });
+
+      const computed = await Repo.computeSettlement(mk);
+      return { computed, aliceId: alice.id };
+    });
+    const c = result.computed;
+    assert.equal(c.ownerRentByProperty.length, 1);
+    assert.equal(c.ownerRentByProperty[0].collectedBy.length, 0);
+    assert.equal(c.ownerRentUnattributed, 500, "nobody collected from this property, so its whole owner-rent total is unattributed, not defaulted to a partner");
+    const alice = c.rows.find(r => r.partner_id === result.aliceId);
+    assert.equal(alice.ownerRentResponsibility, 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
