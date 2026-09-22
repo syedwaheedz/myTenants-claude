@@ -511,3 +511,48 @@ test("computeSettlement/recordSettlement across a multi-month range aggregates b
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+test("computeSettlement's detailed breakdown (byProperty/byReceiver/byMonth/ownerRentByProperty) matches the totals it's built from", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const prevMk = addMonths(mk, -1);
+      const p1 = await Repo.addPartner({ name: "Alice", share_percent: 50 });
+      const p2 = await Repo.addPartner({ name: "Bob", share_percent: 50 });
+      const r1 = await Repo.addReceiver({ name: "R1", partner_id: p1.id });
+      const r2 = await Repo.addReceiver({ name: "R2", partner_id: p2.id });
+      const propA = await Repo.addProperty({ name: "Prop A", owner_rent_amount: 200 });
+      const propB = await Repo.addProperty({ name: "Prop B" });
+      const t1 = await Repo.addTenant({ property_id: propA.id, name: "T1", monthly_rent: 20000 });
+      const t2 = await Repo.addTenant({ property_id: propB.id, name: "T2", monthly_rent: 20000 });
+      await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 1000, date: prevMk + "-05", splits: [{ receiver_id: r1.id, amount: 1000 }] });
+      await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 400, date: mk + "-05", splits: [{ receiver_id: r2.id, amount: 400 }] });
+
+      const computed = await Repo.computeSettlement(prevMk, mk);
+      const html = buildSettlementReportHtml(computed);
+      return { computed, html, propAId: propA.id, propBId: propB.id };
+    });
+    const c = result.computed;
+    assert.equal(c.byProperty.length, 2);
+    assert.equal(c.byProperty.reduce((s, b) => s + b.collected, 0), c.grossCollected, "byProperty must sum to grossCollected");
+    assert.equal(c.byProperty.find(b => b.property.id === result.propAId).collected, 1000);
+    assert.equal(c.byProperty.find(b => b.property.id === result.propBId).collected, 400);
+
+    assert.equal(c.byMonth.length, 2, "the range spans two months");
+    assert.equal(c.byMonth.reduce((s, b) => s + b.collected, 0), c.grossCollected, "byMonth must sum to grossCollected");
+
+    assert.equal(c.byReceiver.length, 2);
+    assert.equal(c.byReceiver.reduce((s, b) => s + b.collected, 0), c.grossCollected, "byReceiver must sum to grossCollected");
+
+    assert.equal(c.ownerRentByProperty.length, 1, "only Prop A has an owner rent amount");
+    assert.equal(c.ownerRentByProperty[0].months, 2);
+    assert.equal(c.ownerRentByProperty[0].total, 400);
+    assert.equal(c.ownerRentByProperty.reduce((s, o) => s + o.total, 0), c.ownerRentTotal, "ownerRentByProperty must sum to ownerRentTotal");
+
+    // The exported report is a preview of computed — should carry the same figures.
+    assert.ok(result.html.includes("Prop A") && result.html.includes("Prop B"));
+    assert.ok(result.html.includes("Total collected"));
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});

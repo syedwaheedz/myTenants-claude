@@ -912,6 +912,8 @@ const Repo = {
     ]);
     const txnById = Object.fromEntries(txns.map(t=>[t.id,t]));
     const receiverById = Object.fromEntries(receivers.map(r=>[r.id,r]));
+    const propertyById = Object.fromEntries(properties.map(p=>[p.id,p]));
+    const partnerById = Object.fromEntries(partners.map(p=>[p.id,p]));
     const relevantSplits = splits.filter(s=>{
       if (s.settled_at) return false;
       const t = txnById[s.transaction_id];
@@ -923,6 +925,29 @@ const Repo = {
     const monthsInRange = monthsBetween(fromPeriod, toPeriod) + 1;
     const ownerRentTotal = properties.reduce((s,p)=>s+(Number(p.owner_rent_amount)||0), 0) * monthsInRange;
     const finalTotal = grossCollected - ownerRentTotal;
+
+    // Detailed breakdown for the pre-settlement summary/export — where the
+    // collected total actually came from (by property, by receiver, and by
+    // month when the range spans more than one), and exactly what the
+    // owner-rent deduction consists of, property by property.
+    const byPropertyMap = {}, byMonthMap = {}, byReceiverMap = {};
+    for (const s of relevantSplits){
+      const t = txnById[s.transaction_id];
+      const pKey = t.property_id || "unknown";
+      (byPropertyMap[pKey] ||= {property: propertyById[t.property_id]||null, collected:0}).collected += s.amount;
+      const mk = monthKey(t.date);
+      (byMonthMap[mk] ||= {mk, collected:0}).collected += s.amount;
+      const rKey = s.receiver_id || "unknown";
+      const r = receiverById[s.receiver_id];
+      (byReceiverMap[rKey] ||= {receiver: r||null, partner: r && r.partner_id ? partnerById[r.partner_id]||null : null, collected:0}).collected += s.amount;
+    }
+    const byProperty = Object.values(byPropertyMap).sort((a,b)=>b.collected-a.collected);
+    const byMonth = Object.values(byMonthMap).sort((a,b)=>a.mk.localeCompare(b.mk));
+    const byReceiver = Object.values(byReceiverMap).sort((a,b)=>b.collected-a.collected);
+    const ownerRentByProperty = properties
+      .filter(p => (Number(p.owner_rent_amount)||0) > 0.004)
+      .map(p => ({ property:p, monthlyRate:Number(p.owner_rent_amount)||0, months:monthsInRange, total:(Number(p.owner_rent_amount)||0)*monthsInRange }))
+      .sort((a,b)=>b.total-a.total);
 
     const byPartner = {};
     for (const p of partners) byPartner[p.id] = {collected:0, splitIds:[]};
@@ -961,7 +986,7 @@ const Repo = {
     // `period` is kept (= fromPeriod when it's a single month, matching the
     // old shape exactly) for every existing caller that only knows about a
     // single period; fromPeriod/toPeriod are the new range-aware fields.
-    return { period: fromPeriod, fromPeriod, toPeriod, grossCollected, ownerRentTotal, finalTotal, unassigned, rows, transfers };
+    return { period: fromPeriod, fromPeriod, toPeriod, grossCollected, ownerRentTotal, finalTotal, unassigned, rows, transfers, byProperty, byMonth, byReceiver, ownerRentByProperty };
   },
   // transferAmounts: {transferIndex: amountActuallyMoved} — lets the person record a
   // partial transfer; whatever's left of each partner's net carries forward as their
@@ -1888,10 +1913,39 @@ Screens.settlement = async function(){
     <div class="meta" style="margin-top:4px;">Pick the same month twice to settle just one month, or widen the range to catch up on several unsettled months in one pass — only unsettled cash is ever touched, so it's safe even if part of the range was already settled.</div>
     ${!computed ? `<div class="warn-box" style="margin-top:10px;">${ic("warning")}"To" must be on or after "From".</div>` : `
     <div class="divider"></div>
-    <div class="row"><span class="meta">Collected (this period)</span><span class="num">${fmtMoney(computed.grossCollected)}</span></div>
+    <button class="btn secondary" onclick="exportSettlementReportPdf()">${ic("picture_as_pdf")}Export summary (PDF)</button>
+    <div class="row" style="margin-top:14px;"><span class="meta">Collected (this period)</span><span class="num">${fmtMoney(computed.grossCollected)}</span></div>
     <div class="row"><span class="meta">− Owner rent (all properties)</span><span class="num">${fmtMoney(computed.ownerRentTotal)}</span></div>
     <div class="row"><span style="font-weight:700;">= Final total</span><span class="num" style="font-weight:700;">${fmtMoney(computed.finalTotal)}</span></div>
     ${computed.unassigned > 0.004 ? `<div class="warn-box" style="margin-top:10px;">${ic("warning")}${fmtMoney(computed.unassigned)} was collected by a receiver with no partner linked, so it's left out of everyone's share below — link that receiver to a partner in Manage Partners.</div>` : ""}
+
+    <div class="section-title">${ic("payments")}Where the cash came from — by property</div>
+    <div class="card">
+      ${computed.byProperty.length ? computed.byProperty.map(b=>`
+        <div class="row"><span class="meta">${esc(b.property?b.property.name:"Unknown property")}</span><span class="num">${fmtMoney(b.collected)}</span></div>
+      `).join("") : `<div class="meta">Nothing collected in this range.</div>`}
+    </div>
+
+    ${computed.byMonth.length > 1 ? `
+    <div class="section-title">${ic("calendar_month")}By month</div>
+    <div class="card">
+      ${computed.byMonth.map(b=>`<div class="row"><span class="meta">${esc(fmtMonth(b.mk))}</span><span class="num">${fmtMoney(b.collected)}</span></div>`).join("")}
+    </div>` : ""}
+
+    <div class="section-title">${ic("person_pin")}By receiver</div>
+    <div class="card">
+      ${computed.byReceiver.length ? computed.byReceiver.map(b=>`
+        <div class="row"><span class="meta">${esc(b.receiver?b.receiver.name:"Unknown receiver")}${b.partner?" → "+esc(b.partner.name)+"'s pool":""}</span><span class="num">${fmtMoney(b.collected)}</span></div>
+      `).join("") : `<div class="meta">Nothing collected in this range.</div>`}
+    </div>
+
+    ${computed.ownerRentByProperty.length ? `
+    <div class="section-title">${ic("remove_circle")}Deductions — owner rent</div>
+    <div class="card">
+      ${computed.ownerRentByProperty.map(o=>`
+        <div class="row"><span class="meta">${esc(o.property.name)} (${fmtMoney(o.monthlyRate)}/mo × ${o.months} month${o.months===1?"":"s"})</span><span class="num">${fmtMoney(o.total)}</span></div>
+      `).join("")}
+    </div>` : ""}
 
     <div class="section-title">${ic("groups")}Who's actually holding the cash</div>
     ${computed.rows.length ? computed.rows.map(r=>`
@@ -1957,6 +2011,109 @@ async function submitSettlement(){
   const unpaidCount = computed.transfers.filter((t, idx) => (Number(transferAmounts[idx])||0) < t.amount - 0.004).length;
   toast(unpaidCount ? `Settlement recorded — ${unpaidCount} transfer${unpaidCount===1?"":"s"} still owed` : "Settlement recorded — all transfers paid");
   goTab("cash");
+}
+// A detailed, printable breakdown of a settlement computation — reuses the
+// same #report-print-root + print CSS the Monthly Report already uses, so
+// it needs no new DOM/CSS. Exports whatever's currently previewed on the
+// Settlement screen (State._lastSettlement), whether or not it's been
+// recorded yet — this is meant to be reviewed/shared *before* finalizing.
+function buildSettlementReportHtml(computed){
+  const generatedDate = fmtDate(todayISO());
+  const periodLabel = fmtPeriodRange(computed.fromPeriod, computed.toPeriod);
+  const rHeader = `
+    <div class="r-header">
+      <div class="r-brand"><img src="icons/icon-192.png" class="r-logo" alt=""><div class="r-brand-name">myTenants</div></div>
+      <div class="r-doc-title"><div class="t1">Settlement Summary</div><div class="t2">${esc(periodLabel)}</div></div>
+    </div>`;
+  const rFooter = `<div class="r-footer"><div class="inner"><span>myTenants — Settlement Summary</span><span>Generated ${esc(generatedDate)}</span></div></div>`;
+
+  const byPropertyTable = computed.byProperty.length ? `
+    <table>
+      <tr><th>Property</th><th class="r-num">Collected</th></tr>
+      ${computed.byProperty.map(b=>`<tr><td>${esc(b.property?b.property.name:"Unknown property")}</td><td class="r-num">${fmtMoney(b.collected)}</td></tr>`).join("")}
+      <tr class="r-row-total"><td>Total collected</td><td class="r-num">${fmtMoney(computed.grossCollected)}</td></tr>
+    </table>` : `<div class="r-empty">Nothing collected in this range.</div>`;
+
+  const byMonthSection = computed.byMonth.length > 1 ? `
+    <div class="r-section-title">Collected by month</div>
+    <table>
+      <tr><th>Month</th><th class="r-num">Collected</th></tr>
+      ${computed.byMonth.map(b=>`<tr><td>${esc(fmtMonth(b.mk))}</td><td class="r-num">${fmtMoney(b.collected)}</td></tr>`).join("")}
+    </table>` : "";
+
+  const byReceiverTable = computed.byReceiver.length ? `
+    <table>
+      <tr><th>Receiver</th><th>Reports to</th><th class="r-num">Collected</th></tr>
+      ${computed.byReceiver.map(b=>`<tr><td>${esc(b.receiver?b.receiver.name:"Unknown receiver")}</td><td>${b.partner?esc(b.partner.name)+"'s pool":"No partner linked"}</td><td class="r-num">${fmtMoney(b.collected)}</td></tr>`).join("")}
+    </table>` : `<div class="r-empty">Nothing collected in this range.</div>`;
+
+  const ownerRentTable = computed.ownerRentByProperty.length ? `
+    <table>
+      <tr><th>Property</th><th class="r-num">Monthly rate</th><th class="r-num">Months</th><th class="r-num">Total deducted</th></tr>
+      ${computed.ownerRentByProperty.map(o=>`<tr><td>${esc(o.property.name)}</td><td class="r-num">${fmtMoney(o.monthlyRate)}</td><td class="r-num">${o.months}</td><td class="r-num">${fmtMoney(o.total)}</td></tr>`).join("")}
+      <tr class="r-row-total"><td colspan="3">Total owner rent deducted</td><td class="r-num">${fmtMoney(computed.ownerRentTotal)}</td></tr>
+    </table>` : `<div class="r-empty">No owner-rent deduction for this range.</div>`;
+
+  const partnerTable = computed.rows.length ? `
+    <table>
+      <tr><th>Partner</th><th class="r-num">Share</th><th class="r-num">Collected</th><th class="r-num">Opening balance</th><th class="r-num">Entitled</th><th class="r-num">Net position</th></tr>
+      ${computed.rows.map(r=>{
+        const netLabel = Math.abs(r.net)<0.005 ? `<span style="color:#6B6A64;">Already even</span>`
+          : r.net>0 ? `<span style="color:#1E6E3C;font-weight:700;">Owed ${fmtMoney(r.net)}</span>`
+          : `<span style="color:#BA1A1A;font-weight:700;">Owes ${fmtMoney(Math.abs(r.net))}</span>`;
+        return `<tr><td>${esc(r.name)}</td><td class="r-num">${r.share_percent}%</td><td class="r-num">${fmtMoney(r.collected)}</td><td class="r-num">${fmtMoney(r.opening_balance)}</td><td class="r-num">${fmtMoney(r.entitled)}</td><td class="r-num">${netLabel}</td></tr>`;
+      }).join("")}
+    </table>` : `<div class="r-empty">Add partners first.</div>`;
+
+  const transfersTable = computed.transfers.length ? `
+    <table>
+      <tr><th>From</th><th></th><th>To</th><th class="r-num">Suggested amount</th></tr>
+      ${computed.transfers.map(t=>`<tr><td>${esc(t.from_name)}</td><td>→</td><td>${esc(t.to_name)}</td><td class="r-num">${fmtMoney(t.amount)}</td></tr>`).join("")}
+    </table>` : `<div class="r-empty">Everyone already holds their fair share — nothing to transfer.</div>`;
+
+  return `
+    <div class="r-page">
+      ${rHeader}
+      <h1 class="r-cover-title">${esc(periodLabel)} — Settlement Summary</h1>
+      <div class="r-cover-sub">Generated ${esc(generatedDate)} · A preview of the settlement computation for this range — not yet a record of what was actually recorded/paid</div>
+
+      <div class="r-stat-grid">
+        <div class="r-stat-box"><div class="r-label">COLLECTED (GROSS)</div><div class="r-value">${fmtMoney(computed.grossCollected)}</div></div>
+        <div class="r-stat-box"><div class="r-label">OWNER RENT DEDUCTED</div><div class="r-value">${fmtMoney(computed.ownerRentTotal)}</div></div>
+        <div class="r-stat-box"><div class="r-label">FINAL TOTAL</div><div class="r-value">${fmtMoney(computed.finalTotal)}</div></div>
+      </div>
+      ${computed.unassigned>0.004 ? `<div class="r-callout">${fmtMoney(computed.unassigned)} was collected by a receiver with no partner linked, and is left out of everyone's share below.</div>` : ""}
+
+      <div class="r-section-title">Where the cash came from — by property</div>
+      ${byPropertyTable}
+      ${byMonthSection}
+
+      <div class="r-section-title">Where the cash came from — by receiver</div>
+      ${byReceiverTable}
+
+      <div class="r-section-title">Deductions — owner rent</div>
+      ${ownerRentTable}
+
+      <div class="r-section-title">Partner breakdown</div>
+      ${partnerTable}
+
+      <div class="r-section-title">Suggested transfers</div>
+      ${transfersTable}
+
+      ${rFooter}
+    </div>`;
+}
+async function exportSettlementReportPdf(){
+  const computed = State._lastSettlement;
+  if (!computed) return;
+  document.getElementById("report-print-root").innerHTML = buildSettlementReportHtml(computed);
+  setTimeout(() => {
+    const jobName = computed.fromPeriod===computed.toPeriod ? `myTenants-settlement-${computed.fromPeriod}` : `myTenants-settlement-${computed.fromPeriod}_to_${computed.toPeriod}`;
+    // Android's WebView never implements window.print() (silent no-op) —
+    // use the NativePrint plugin's Android PrintManager bridge instead.
+    if (isNativeApp()) window.Capacitor.Plugins.NativePrint.print({ jobName });
+    else window.print();
+  }, 150);
 }
 
 // ---------- Partners ----------
