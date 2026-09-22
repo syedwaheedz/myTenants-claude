@@ -1969,7 +1969,9 @@ Screens.settlement = async function(){
       <div class="card">
         <div class="row"><div class="name">${esc(r.name)}</div><span class="chip neutral">${r.share_percent}% share</span></div>
         <div class="row"><span class="meta">Collected via their receivers</span><span class="num">${fmtMoney(r.collected)}</span></div>
-        <div class="row"><span class="meta">Entitled to (share + opening balance)</span><span class="num">${fmtMoney(r.entitled)}</span></div>
+        <div class="row"><span class="meta">Share of this period's pool</span><span class="num">${fmtMoney(r.share)}</span></div>
+        ${Math.abs(r.opening_balance)>0.004 ? `<div class="row"><span class="meta">${r.opening_balance>=0?"+ Carried forward (owed to them from before)":"− Carried forward (they still owe from before)"}</span><span class="num">${fmtMoney(Math.abs(r.opening_balance))}</span></div>` : ""}
+        <div class="row"><span class="meta">= Entitled to</span><span class="num">${fmtMoney(r.entitled)}</span></div>
         <div class="row"><span style="font-weight:700;">${Math.abs(r.net)<0.005 ? "Already even" : r.net>0 ? "Owed to them" : "Holding extra — owes this out"}</span><span class="num" style="font-weight:700;color:${r.net>=0?'var(--paid)':'var(--due)'};">${fmtMoney(Math.abs(r.net))}</span></div>
       </div>`).join("") : `<div class="empty">Add partners first (see the Partners tab).</div>`}
 
