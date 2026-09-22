@@ -550,9 +550,17 @@ test("computeSettlement's detailed breakdown (byProperty/byReceiver/byMonth/owne
     assert.equal(c.ownerRentByProperty[0].total, 400);
     assert.equal(c.ownerRentByProperty.reduce((s, o) => s + o.total, 0), c.ownerRentTotal, "ownerRentByProperty must sum to ownerRentTotal");
 
+    // Prop A's rent was entirely collected by R1 (Alice's pool) — the owner
+    // rent breakdown must say so, answering "who needs to pay the owner".
+    assert.equal(c.ownerRentByProperty[0].collectedBy.length, 1);
+    assert.equal(c.ownerRentByProperty[0].collectedBy[0].receiver.name, "R1");
+    assert.equal(c.ownerRentByProperty[0].collectedBy[0].partner.name, "Alice");
+    assert.equal(c.ownerRentByProperty[0].collectedBy[0].amount, 1000);
+
     // The exported report is a preview of computed — should carry the same figures.
     assert.ok(result.html.includes("Prop A") && result.html.includes("Prop B"));
     assert.ok(result.html.includes("Total collected"));
+    assert.ok(result.html.includes("Collected by"), "the owner-rent table should show who collected each property's rent");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

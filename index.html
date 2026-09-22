@@ -944,9 +944,25 @@ const Repo = {
     const byProperty = Object.values(byPropertyMap).sort((a,b)=>b.collected-a.collected);
     const byMonth = Object.values(byMonthMap).sort((a,b)=>a.mk.localeCompare(b.mk));
     const byReceiver = Object.values(byReceiverMap).sort((a,b)=>b.collected-a.collected);
+    // For each property with an owner-rent obligation, who actually collected
+    // its rent this period — i.e. whose cash the owner's cut needs to come out
+    // of. The deduction itself is just a formula (there's no separate "paid
+    // the owner" transaction), so this is what answers "who's on the hook for
+    // it" rather than leaving it as an unattributed subtraction.
     const ownerRentByProperty = properties
       .filter(p => (Number(p.owner_rent_amount)||0) > 0.004)
-      .map(p => ({ property:p, monthlyRate:Number(p.owner_rent_amount)||0, months:monthsInRange, total:(Number(p.owner_rent_amount)||0)*monthsInRange }))
+      .map(p => {
+        const collectedByMap = {};
+        for (const s of relevantSplits){
+          const t = txnById[s.transaction_id];
+          if (t.property_id !== p.id) continue;
+          const r = receiverById[s.receiver_id];
+          const key = s.receiver_id || "unknown";
+          (collectedByMap[key] ||= {receiver:r||null, partner: r && r.partner_id ? partnerById[r.partner_id]||null : null, amount:0}).amount += s.amount;
+        }
+        const collectedBy = Object.values(collectedByMap).sort((a,b)=>b.amount-a.amount);
+        return { property:p, monthlyRate:Number(p.owner_rent_amount)||0, months:monthsInRange, total:(Number(p.owner_rent_amount)||0)*monthsInRange, collectedBy };
+      })
       .sort((a,b)=>b.total-a.total);
 
     const byPartner = {};
@@ -1944,6 +1960,7 @@ Screens.settlement = async function(){
     <div class="card">
       ${computed.ownerRentByProperty.map(o=>`
         <div class="row"><span class="meta">${esc(o.property.name)} (${fmtMoney(o.monthlyRate)}/mo × ${o.months} month${o.months===1?"":"s"})</span><span class="num">${fmtMoney(o.total)}</span></div>
+        <div class="meta" style="margin:2px 0 10px 0;">${o.collectedBy.length ? `Collected by: ${o.collectedBy.map(c=>`${esc(c.receiver?c.receiver.name:"Unknown receiver")}${c.partner?` (${esc(c.partner.name)}'s pool)`:""} — ${fmtMoney(c.amount)}`).join(", ")}` : `Nothing collected for this property in this range yet — the owner's ${fmtMoney(o.total)} still needs to come from somewhere.`}</div>
       `).join("")}
     </div>` : ""}
 
@@ -2049,9 +2066,14 @@ function buildSettlementReportHtml(computed){
 
   const ownerRentTable = computed.ownerRentByProperty.length ? `
     <table>
-      <tr><th>Property</th><th class="r-num">Monthly rate</th><th class="r-num">Months</th><th class="r-num">Total deducted</th></tr>
-      ${computed.ownerRentByProperty.map(o=>`<tr><td>${esc(o.property.name)}</td><td class="r-num">${fmtMoney(o.monthlyRate)}</td><td class="r-num">${o.months}</td><td class="r-num">${fmtMoney(o.total)}</td></tr>`).join("")}
-      <tr class="r-row-total"><td colspan="3">Total owner rent deducted</td><td class="r-num">${fmtMoney(computed.ownerRentTotal)}</td></tr>
+      <tr><th>Property</th><th class="r-num">Monthly rate</th><th class="r-num">Months</th><th class="r-num">Total deducted</th><th>Collected by</th></tr>
+      ${computed.ownerRentByProperty.map(o=>{
+        const collectedByLabel = o.collectedBy.length
+          ? o.collectedBy.map(c=>`${esc(c.receiver?c.receiver.name:"Unknown")}${c.partner?` (${esc(c.partner.name)})`:""}: ${fmtMoney(c.amount)}`).join("<br>")
+          : `<span style="color:#BA1A1A;">Nothing collected yet</span>`;
+        return `<tr><td>${esc(o.property.name)}</td><td class="r-num">${fmtMoney(o.monthlyRate)}</td><td class="r-num">${o.months}</td><td class="r-num">${fmtMoney(o.total)}</td><td>${collectedByLabel}</td></tr>`;
+      }).join("")}
+      <tr class="r-row-total"><td colspan="3">Total owner rent deducted</td><td class="r-num">${fmtMoney(computed.ownerRentTotal)}</td><td></td></tr>
     </table>` : `<div class="r-empty">No owner-rent deduction for this range.</div>`;
 
   const partnerTable = computed.rows.length ? `
