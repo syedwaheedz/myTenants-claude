@@ -965,6 +965,27 @@ const Repo = {
       })
       .sort((a,b)=>b.total-a.total);
 
+    // Roll ownerRentByProperty's per-property "who collected it" up to a
+    // per-partner "how much of the total owner-rent deduction is effectively
+    // their responsibility to pay out of what they personally collected".
+    // Allocated proportional to each partner's share of THAT property's
+    // collections this period (not an equal split) — it's a direct extension
+    // of collectedBy, which already expresses exactly that. A property with
+    // zero collections this period has nobody currently holding cash to pay
+    // its owner from, so its whole total goes to ownerRentUnattributed
+    // instead of being silently attributed to no one (i.e. shown as 0).
+    const ownerRentResponsibilityByPartner = {};
+    let ownerRentUnattributed = 0;
+    for (const o of ownerRentByProperty){
+      const collectedTotal = o.collectedBy.reduce((s,c)=>s+c.amount, 0);
+      if (collectedTotal <= 0.004){ ownerRentUnattributed += o.total; continue; }
+      for (const c of o.collectedBy){
+        const portion = o.total * (c.amount / collectedTotal);
+        if (c.partner) ownerRentResponsibilityByPartner[c.partner.id] = (ownerRentResponsibilityByPartner[c.partner.id]||0) + portion;
+        else ownerRentUnattributed += portion;
+      }
+    }
+
     const byPartner = {};
     for (const p of partners) byPartner[p.id] = {collected:0, splitIds:[]};
     let unassigned = 0;
@@ -982,7 +1003,14 @@ const Repo = {
       // net > 0: this partner holds less cash than they're entitled to — owed to them.
       // net < 0: this partner is holding more than their share — they owe the excess out.
       const net = entitled - collected;
-      return { partner_id:p.id, name:p.name, share_percent:p.share_percent, collected, share, opening_balance:opening, entitled, net, split_ids: byPartner[p.id].splitIds };
+      // How much of the owner-rent deduction is on this partner to pay out of
+      // what they collected, and what's left over after doing so. Purely
+      // explanatory — net/transfers above are already correct without this;
+      // see the comment above ownerRentResponsibilityByPartner. Can go
+      // negative (their own collections didn't cover it) — not clamped.
+      const ownerRentResponsibility = ownerRentResponsibilityByPartner[p.id] || 0;
+      const availableAfterOwnerRent = collected - ownerRentResponsibility;
+      return { partner_id:p.id, name:p.name, share_percent:p.share_percent, collected, share, opening_balance:opening, entitled, net, split_ids: byPartner[p.id].splitIds, ownerRentResponsibility, availableAfterOwnerRent };
     });
 
     // Greedy debt-netting: match the biggest "owes" against the biggest "owed"
@@ -1002,7 +1030,7 @@ const Repo = {
     // `period` is kept (= fromPeriod when it's a single month, matching the
     // old shape exactly) for every existing caller that only knows about a
     // single period; fromPeriod/toPeriod are the new range-aware fields.
-    return { period: fromPeriod, fromPeriod, toPeriod, grossCollected, ownerRentTotal, finalTotal, unassigned, rows, transfers, byProperty, byMonth, byReceiver, ownerRentByProperty };
+    return { period: fromPeriod, fromPeriod, toPeriod, grossCollected, ownerRentTotal, finalTotal, unassigned, rows, transfers, byProperty, byMonth, byReceiver, ownerRentByProperty, ownerRentUnattributed };
   },
   // transferAmounts: {transferIndex: amountActuallyMoved} — lets the person record a
   // partial transfer; whatever's left of each partner's net carries forward as their
@@ -1964,6 +1992,19 @@ Screens.settlement = async function(){
       `).join("")}
     </div>` : ""}
 
+    ${computed.rows.length ? `
+    <div class="section-title">${ic("calculate")}Reconciliation — after owner rent</div>
+    ${computed.rows.map(r=>`
+      <div class="card">
+        <div class="row"><div class="name">${esc(r.name)}</div><span class="chip neutral">${r.share_percent}% share</span></div>
+        <div class="row"><span class="meta">Their share of final total</span><span class="num">${fmtMoney(r.share)}</span></div>
+        <div class="row"><span class="meta">Amount available (collected)</span><span class="num">${fmtMoney(r.collected)}</span></div>
+        ${r.ownerRentResponsibility>0.004 ? `<div class="row"><span class="meta">− Owner rent paid from this</span><span class="num">${fmtMoney(r.ownerRentResponsibility)}</span></div>` : ""}
+        <div class="row"><span style="font-weight:700;">= Available after owner rent</span><span class="num" style="font-weight:700;color:${r.availableAfterOwnerRent<0?'var(--due)':'inherit'};">${fmtMoney(r.availableAfterOwnerRent)}</span></div>
+      </div>`).join("")}
+    ${computed.ownerRentUnattributed>0.004 ? `<div class="warn-box" style="margin-top:10px;">${ic("warning")}${fmtMoney(computed.ownerRentUnattributed)} of owner rent isn't attributable to any partner yet — see the owner rent section above for which property nobody's collected from this period, so no one is currently holding that cash to pay the owner from.</div>` : ""}
+    ` : ""}
+
     <div class="section-title">${ic("groups")}Who's actually holding the cash</div>
     ${computed.rows.length ? computed.rows.map(r=>`
       <div class="card">
@@ -2078,6 +2119,15 @@ function buildSettlementReportHtml(computed){
       <tr class="r-row-total"><td colspan="3">Total owner rent deducted</td><td class="r-num">${fmtMoney(computed.ownerRentTotal)}</td><td></td></tr>
     </table>` : `<div class="r-empty">No owner-rent deduction for this range.</div>`;
 
+  const reconciliationCallout = computed.ownerRentUnattributed>0.004
+    ? `<div class="r-callout">${fmtMoney(computed.ownerRentUnattributed)} of owner rent isn't attributable to any partner yet — see the owner rent table above for which property nobody's collected from this period.</div>` : "";
+  const reconciliationTable = computed.rows.length ? `
+    ${reconciliationCallout}
+    <table>
+      <tr><th>Partner</th><th class="r-num">Share %</th><th class="r-num">Share ₹</th><th class="r-num">Collected</th><th class="r-num">Owner rent responsibility</th><th class="r-num">Available after owner rent</th></tr>
+      ${computed.rows.map(r=>`<tr><td>${esc(r.name)}</td><td class="r-num">${r.share_percent}%</td><td class="r-num">${fmtMoney(r.share)}</td><td class="r-num">${fmtMoney(r.collected)}</td><td class="r-num">${fmtMoney(r.ownerRentResponsibility)}</td><td class="r-num">${fmtMoney(r.availableAfterOwnerRent)}</td></tr>`).join("")}
+    </table>` : `<div class="r-empty">Add partners first.</div>`;
+
   const partnerTable = computed.rows.length ? `
     <table>
       <tr><th>Partner</th><th class="r-num">Share</th><th class="r-num">Collected</th><th class="r-num">Opening balance</th><th class="r-num">Entitled</th><th class="r-num">Net position</th></tr>
@@ -2117,6 +2167,9 @@ function buildSettlementReportHtml(computed){
 
       <div class="r-section-title">Deductions — owner rent</div>
       ${ownerRentTable}
+
+      <div class="r-section-title">Reconciliation — after owner rent</div>
+      ${reconciliationTable}
 
       <div class="r-section-title">Partner breakdown</div>
       ${partnerTable}
