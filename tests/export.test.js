@@ -1,7 +1,8 @@
-// Regression tests for the Monthly Report (PDF) export and the JSON backup
-// export/import. Exercises the real buildMonthlyReportData/
-// buildMonthlyReportHtml/exportMonthlyReportPdf/exportDatabaseCopy/
-// importDatabaseCopy functions.
+// Regression tests for the unified export report (Tenant rental status /
+// Partner settlement status / Full view) and the JSON backup export/import.
+// Exercises the real buildExportReportData/buildTenantStatusReportHtml/
+// buildPartnerSettlementReportHtml/buildFullViewReportHtml/exportReportPdf/
+// exportDatabaseCopy/importDatabaseCopy functions.
 "use strict";
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
@@ -11,7 +12,7 @@ let harness;
 before(async () => { harness = await createHarness(); });
 after(async () => { await harness.close(); });
 
-test("buildMonthlyReportData/Html shows 'Applied to this month', not raw payments, per tenant (regression)", async () => {
+test("Tenant rental status report shows 'Applied to this month', not raw payments, per tenant (regression)", async () => {
   const { page, errors, close } = await harness.newPage();
   try {
     const result = await page.evaluate(async () => {
@@ -30,25 +31,161 @@ test("buildMonthlyReportData/Html shows 'Applied to this month', not raw payment
       const t2 = await Repo.addTenant({ property_id: prop.id, name: "Clean Tenant", monthly_rent: 3000 });
       await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 3000, date: mk + "-05" });
 
-      const data = await buildMonthlyReportData(mk);
-      const html = buildMonthlyReportHtml(data);
-      const propDetail = data.propertyDetail.find(p => p.name === "Report Test Property");
-      const row1 = propDetail.rows.find(r => r.tenant.id === t1.id);
-      const row2 = propDetail.rows.find(r => r.tenant.id === t2.id);
+      const statusRows = await Repo.tenantStatusRows(mk);
+      const row1 = statusRows.find(r => r.tenant.id === t1.id);
+      const row2 = statusRows.find(r => r.tenant.id === t2.id);
+
+      const data = await buildExportReportData(mk, mk);
+      const html = buildTenantStatusReportHtml(data);
       return { row1, row2, html };
     });
     assert.equal(result.row1.status, "due");
     assert.equal(result.row1.appliedToCurrentMonth, 0);
     assert.equal(result.row2.status, "paid");
     assert.equal(result.row2.appliedToCurrentMonth, 3000);
-    assert.ok(result.html.includes("Applied to this month"), "report table header must reflect the oldest-debt-first figure, not raw payments");
+    assert.ok(result.html.includes("Applied this month"), "report table header must reflect the oldest-debt-first figure, not raw payments");
     assert.ok(result.html.includes("Arrears Tenant"));
     assert.ok(result.html.includes("Clean Tenant"));
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
 
-test("exportMonthlyReportPdf uses the native print plugin when isNativeApp() is true, and window.print otherwise", async () => {
+test("Report 1 (Tenant rental status) and Report 2 (Partner settlement status) both list every payment for tallying against manual/receipt records", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const partnerA = await Repo.addPartner({ name: "Alice", share_percent: 50 });
+      const partnerB = await Repo.addPartner({ name: "Bob", share_percent: 50 });
+      const recvA = await Repo.addReceiver({ name: "Alice Receiver", partner_id: partnerA.id });
+      const recvB = await Repo.addReceiver({ name: "Bob Receiver", partner_id: partnerB.id });
+      const prop = await Repo.addProperty({ name: "Payments Test Property" });
+      const t1 = await Repo.addTenant({ property_id: prop.id, name: "Tenant One", monthly_rent: 5000 });
+      const t2 = await Repo.addTenant({ property_id: prop.id, name: "Tenant Two", monthly_rent: 3000 });
+
+      await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 5000, date: mk + "-05", splits: [{ receiver_id: recvA.id, amount: 5000 }] });
+      await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 3000, date: mk + "-10", splits: [{ receiver_id: recvB.id, amount: 3000 }] });
+
+      const rows = await Repo.paymentsReceivedInRange(mk, mk);
+
+      const data = await buildExportReportData(mk, mk);
+      const tenantHtml = buildTenantStatusReportHtml(data);
+      const settlementHtml = buildPartnerSettlementReportHtml(data);
+
+      return { rows, tenantHtml, settlementHtml };
+    });
+    assert.equal(result.rows.length, 2);
+    assert.equal(result.rows[0].total_amount, 5000, "sorted oldest-first by date");
+    assert.equal(result.rows[1].total_amount, 3000);
+    assert.ok(result.rows[0].receivedByNames.join(",").includes("Alice Receiver"));
+    assert.ok(result.rows[1].receivedByNames.join(",").includes("Bob Receiver"));
+
+    assert.ok(result.tenantHtml.includes("Full transaction history"));
+    assert.ok(result.tenantHtml.includes("Tenant One"));
+    assert.ok(result.tenantHtml.includes("Tenant Two"));
+    assert.ok(result.tenantHtml.includes("Alice Receiver"));
+
+    assert.ok(result.settlementHtml.includes("Payments received this period"));
+    assert.ok(result.settlementHtml.includes("Tenant One"));
+    assert.ok(result.settlementHtml.includes("Bob Receiver"));
+
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("Report 1's Arrears breakdown by tenant includes every tenant (paid and unpaid) with one column per month in the export range", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const toMk = monthKey();
+      const fromMk = addMonths(toMk, -1);
+      const prop = await Repo.addProperty({ name: "Arrears Export Property" });
+
+      // In arrears: 2 months accrued (5000 x 2 = 10000), paid 3000.
+      const t1 = await Repo.addTenant({ property_id: prop.id, name: "Behind Tenant", monthly_rent: 5000 });
+      await Repo.updateTenant(t1.id, { start_date: fromMk + "-01", rent_history: [{ effective_month: fromMk, rent: 5000 }], last_accrual_month: toMk });
+      await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 3000, date: fromMk + "-05" });
+
+      // Fully paid up both months — must still appear.
+      const t2 = await Repo.addTenant({ property_id: prop.id, name: "Current Tenant", monthly_rent: 4000 });
+      await Repo.updateTenant(t2.id, { start_date: fromMk + "-01", rent_history: [{ effective_month: fromMk, rent: 4000 }], last_accrual_month: toMk });
+      await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 4000, date: fromMk + "-05" });
+      await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 4000, date: toMk + "-05" });
+
+      const data = await buildExportReportData(fromMk, toMk);
+      const html = buildTenantStatusReportHtml(data);
+      return { html, monthsInRange: data.monthsInRange, arrearsRows: data.arrearsRows.map(r => ({ name: r.tenant.name, balance: r.balance })) };
+    });
+    assert.equal(result.monthsInRange.length, 2, "one column per month in the From/To range");
+    assert.ok(result.html.includes("Arrears breakdown by tenant"));
+    assert.ok(result.html.includes("Behind Tenant"));
+    assert.ok(result.html.includes("Current Tenant"), "fully-paid tenants must still appear, not be filtered out");
+    assert.equal(result.arrearsRows.find(r => r.name === "Behind Tenant").balance, 7000, "10000 accrued - 3000 paid");
+    assert.equal(result.arrearsRows.find(r => r.name === "Current Tenant").balance, 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("Full view report is exactly 2 pages — page 1 tenant status + full transactions, page 2 partner settlement", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const partner = await Repo.addPartner({ name: "Alice", share_percent: 100 });
+      const recv = await Repo.addReceiver({ name: "Alice Receiver", partner_id: partner.id });
+      const prop = await Repo.addProperty({ name: "Full View Property" });
+      const t = await Repo.addTenant({ property_id: prop.id, name: "Full View Tenant", monthly_rent: 4000 });
+      await Repo.recordRentPayment({ tenant_id: t.id, total_amount: 4000, date: mk + "-05", splits: [{ receiver_id: recv.id, amount: 4000 }] });
+
+      const data = await buildExportReportData(mk, mk);
+      const html = buildFullViewReportHtml(data);
+      const root = document.createElement("div");
+      root.innerHTML = html;
+      const pageCount = root.querySelectorAll(".r-page").length;
+      const footerText = [...root.querySelectorAll(".r-footer")].map(f => f.textContent);
+      return { html, pageCount, footerText };
+    });
+    assert.equal(result.pageCount, 2);
+    assert.ok(result.footerText.some(t => t.includes("Page 1 of 2")));
+    assert.ok(result.footerText.some(t => t.includes("Page 2 of 2")));
+    assert.ok(result.html.includes("Tenant Rental Status"));
+    assert.ok(result.html.includes("Partner Settlement Status"));
+    assert.ok(result.html.includes("Full transaction history"));
+    assert.ok(result.html.includes("Suggested transfers"));
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("Repo.transactionsInRange keeps every type (including adjustments and voided rows), sorted tenant-then-date", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const prop = await Repo.addProperty({ name: "P" });
+      const t1 = await Repo.addTenant({ property_id: prop.id, name: "Zed Tenant", monthly_rent: 5000 });
+      const t2 = await Repo.addTenant({ property_id: prop.id, name: "Amy Tenant", monthly_rent: 3000 });
+
+      const payment = await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 5000, date: mk + "-05" });
+      await Repo.recordBalanceAdjustment({ tenant_id: t2.id, amount: -500, date: mk + "-06", note: "Discount" });
+      await Repo.voidTransaction(payment.id);
+
+      const rows = await Repo.transactionsInRange(mk, mk);
+      // paymentsReceivedInRange must still exclude the voided payment and
+      // any non-RENT_PAYMENT rows — unchanged behavior after the refactor.
+      const paymentsOnly = await Repo.paymentsReceivedInRange(mk, mk);
+      return { rows: rows.map(r => ({ tenant: r.tenant?.name, type: r.type, voided: r.is_voided })), paymentsOnlyCount: paymentsOnly.length };
+    });
+    assert.equal(result.rows.length, 2, "both the voided payment and the adjustment are kept");
+    assert.equal(result.rows[0].tenant, "Amy Tenant", "sorted by tenant name first");
+    assert.equal(result.rows[1].tenant, "Zed Tenant");
+    assert.ok(result.rows.some(r => r.type === "ADJUSTMENT"));
+    assert.ok(result.rows.some(r => r.type === "RENT_PAYMENT" && r.voided === true));
+    assert.equal(result.paymentsOnlyCount, 0, "the voided payment must not appear in paymentsReceivedInRange");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("exportReportPdf uses the native print plugin when isNativeApp() is true, and window.print otherwise", async () => {
   const { page, errors, close } = await harness.newPage();
   try {
     const result = await page.evaluate(async () => {
@@ -64,17 +201,18 @@ test("exportMonthlyReportPdf uses the native print plugin when isNativeApp() is 
       toInput.id = "report-to-month";
       toInput.value = mk;
       document.body.appendChild(toInput);
+      State.exportMode = "tenant";
 
       let webPrintCalled = false;
       window.print = () => { webPrintCalled = true; };
-      await exportMonthlyReportPdf();
+      await exportReportPdf();
       await new Promise(r => setTimeout(r, 300));
       const webPrintCalledResult = webPrintCalled;
 
       let nativePrintArgs = null;
       window.Capacitor = { isNativePlatform: () => true, Plugins: { NativePrint: { print: (opts) => { nativePrintArgs = opts; } } } };
       webPrintCalled = false;
-      await exportMonthlyReportPdf();
+      await exportReportPdf();
       await new Promise(r => setTimeout(r, 300));
 
       return { webPrintCalled: webPrintCalledResult, nativePrintCalledWebPrintToo: webPrintCalled, nativePrintArgs, reportHtmlNonEmpty: document.getElementById("report-print-root").innerHTML.length > 0 };
@@ -88,41 +226,30 @@ test("exportMonthlyReportPdf uses the native print plugin when isNativeApp() is 
   } finally { await close(); }
 });
 
-// Skipped for now, not because it's failing — the multi-month range feature
-// just shipped and hasn't had real-world use yet; re-enable once it has.
-test("exportMonthlyReportPdf concatenates one 3-page report per month across a From/To range", { skip: true }, async () => {
+test("A multi-month From/To range produces one cohesive report, not one concatenated per month", async () => {
   const { page, errors, close } = await harness.newPage();
   try {
     const result = await page.evaluate(async () => {
       const toMk = monthKey();
       const fromMk = addMonths(toMk, -1);
       const prop = await Repo.addProperty({ name: "P" });
-      await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 5000 });
+      const t = await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 5000 });
+      await Repo.recordRentPayment({ tenant_id: t.id, total_amount: 5000, date: fromMk + "-05" });
+      await Repo.recordRentPayment({ tenant_id: t.id, total_amount: 5000, date: toMk + "-05" });
 
-      const fromInput = document.createElement("input");
-      fromInput.id = "report-from-month";
-      fromInput.value = fromMk;
-      document.body.appendChild(fromInput);
-      const toInput = document.createElement("input");
-      toInput.id = "report-to-month";
-      toInput.value = toMk;
-      document.body.appendChild(toInput);
-
-      window.print = () => {};
-      await exportMonthlyReportPdf();
-      await new Promise(r => setTimeout(r, 300));
-
-      const root = document.getElementById("report-print-root");
+      const data = await buildExportReportData(fromMk, toMk);
+      const html = buildTenantStatusReportHtml(data);
+      const root = document.createElement("div");
+      root.innerHTML = html;
       const pageCount = root.querySelectorAll(".r-page").length;
       const footerText = [...root.querySelectorAll(".r-footer")].map(f => f.textContent);
-      return { pageCount, footerText, fromLabel: fmtMonth(fromMk), toLabel: fmtMonth(toMk) };
+      // Both months' payments should appear in the one full-transaction table.
+      const rowCount = root.querySelectorAll("table tr").length;
+      return { pageCount, footerText, txRowCount: data.txRows.length };
     });
-    assert.equal(result.pageCount, 6, "2 months x 3 pages each");
-    // Each month's footer is self-contained ("Page 1 of 3", not "Page 4 of 6")
-    // but prefixed with its own month so it's clear which month you're looking at.
-    assert.ok(result.footerText.some(t => t.includes("Page 1 of 3")));
-    assert.ok(result.footerText.some(t => t.includes(result.fromLabel)), "footer should mention the From month");
-    assert.ok(result.footerText.some(t => t.includes(result.toLabel)), "footer should mention the To month");
+    assert.equal(result.pageCount, 1, "a 2-month range is still a single report, not one page per month");
+    assert.ok(result.footerText.some(t => t.includes("Page 1 of 1")));
+    assert.equal(result.txRowCount, 2, "the full transaction table spans the whole range");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

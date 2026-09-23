@@ -529,9 +529,9 @@ test("computeSettlement's detailed breakdown (byProperty/byReceiver/byMonth/owne
       await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 1000, date: prevMk + "-05", splits: [{ receiver_id: r1.id, amount: 1000 }] });
       await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 400, date: mk + "-05", splits: [{ receiver_id: r2.id, amount: 400 }] });
 
-      const computed = await Repo.computeSettlement(prevMk, mk);
-      const html = buildSettlementReportHtml(computed);
-      return { computed, html, propAId: propA.id, propBId: propB.id };
+      const data = await buildExportReportData(prevMk, mk);
+      const html = buildPartnerSettlementReportHtml(data);
+      return { computed: data.computed, html, propAId: propA.id, propBId: propB.id };
     });
     const c = result.computed;
     assert.equal(c.byProperty.length, 2);

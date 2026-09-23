@@ -6,7 +6,8 @@
   "scripts": {
     "build:android-www": "node scripts/build-android-www.js",
     "android:sync": "npm run build:android-www && npx cap sync android",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "serve": "node scripts/serve-local.js"
   },
   "devDependencies": {
     "@capacitor/android": "^6.2.0",
