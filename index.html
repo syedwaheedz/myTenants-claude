@@ -299,6 +299,9 @@
   .segmented{display:flex;background:var(--md-surface-variant);border-radius:12px;padding:3px;margin-bottom:12px;}
   .segmented button{flex:1;background:none;border:none;padding:8px 10px;border-radius:9px;font-size:13px;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:inherit;}
   .segmented button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-1);}
+  .segmented.vertical{flex-direction:column;height:auto;gap:6px;background:none;padding:0;}
+  .segmented.vertical button{background:var(--md-surface-variant);border-radius:9px;text-align:left;padding:10px 12px;}
+  .segmented.vertical button.active{background:var(--surface);box-shadow:var(--shadow-1);}
   .month-summary{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);margin:2px 2px 12px 2px;flex-wrap:wrap;}
   .month-summary b{color:var(--ink);}
   /* ---- Monthly report (print / PDF export) ----
@@ -3049,10 +3052,10 @@ function openExportModal({mode, fromMk, toMk} = {}){
         <label>To</label>
         <input type="month" id="report-to-month" max="${monthKey()}" value="${toMonth}">
         <label style="margin-top:10px;">Report</label>
-        <div class="segmented" style="flex-direction:column;height:auto;">
-          <button class="${selectedMode==="tenant"?"active":""}" style="text-align:left;padding:10px 12px;" onclick="setExportMode('tenant')">Tenant rental status</button>
-          <button class="${selectedMode==="settlement"?"active":""}" style="text-align:left;padding:10px 12px;" onclick="setExportMode('settlement')">Partner settlement status</button>
-          <button class="${selectedMode==="full"?"active":""}" style="text-align:left;padding:10px 12px;" onclick="setExportMode('full')">Full view (both)</button>
+        <div class="segmented vertical">
+          <button class="${selectedMode==="tenant"?"active":""}" onclick="setExportMode('tenant')">Tenant rental status</button>
+          <button class="${selectedMode==="settlement"?"active":""}" onclick="setExportMode('settlement')">Partner settlement status</button>
+          <button class="${selectedMode==="full"?"active":""}" onclick="setExportMode('full')">Full view (both)</button>
         </div>
         <button class="btn" style="margin-top:16px;" onclick="exportReportPdf()">${ic("picture_as_pdf")}Export PDF</button>
         <div class="meta" style="margin-top:10px;">This opens your browser's print dialog — choose "Save as PDF" as the destination.</div>
