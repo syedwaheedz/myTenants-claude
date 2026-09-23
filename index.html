@@ -301,9 +301,6 @@
   .segmented button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-1);}
   .month-summary{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);margin:2px 2px 12px 2px;flex-wrap:wrap;}
   .month-summary b{color:var(--ink);}
-  .snapshot-canvas-wrap{background:var(--md-surface-variant);border-radius:12px;padding:10px;margin-bottom:14px;display:flex;justify-content:center;}
-  .snapshot-canvas-wrap canvas{width:100%;max-width:340px;height:auto;border-radius:8px;box-shadow:var(--shadow-2);}
-
   /* ---- Monthly report (print / PDF export) ----
      Hidden in the normal app UI; only shown to the browser's print engine.
      Every rule is scoped under #report-print-root so it can never bleed
@@ -348,6 +345,7 @@
   #report-print-root .r-pill.paid{ background:#DFF3E4; color:#1E6E3C; }
   #report-print-root .r-pill.partial{ background:#F6E1AC; color:#6F5D1E; }
   #report-print-root .r-pill.due{ background:#FBEAE6; color:#BA1A1A; }
+  #report-print-root .r-pill.neutral{ background:#EDEDE8; color:#5B5B56; }
   #report-print-root .r-row-total td{ font-weight:700; border-top:2px solid #DCE8E2; border-bottom:none; background:#fff; }
   #report-print-root .r-two-col{ display:flex; gap:8mm; }
   #report-print-root .r-two-col > div{ flex:1; }
@@ -1288,6 +1286,17 @@ const Repo = {
       .filter(Boolean)
       .sort((a,b)=>a.tenant.name.localeCompare(b.tenant.name));
   },
+  // Same as monthlyStatusForAllTenants, but grouped/sorted by property (so a
+  // printed report reads property-by-property) and with each tenant's
+  // point-in-time balance attached — for the export reports' "tenant rental
+  // status" table.
+  async tenantStatusRows(mk){
+    const rows = await this.monthlyStatusForAllTenants(mk);
+    const withBalance = await Promise.all(rows.map(async r => ({ ...r, balance: await this.tenantBalanceAsOf(r.tenant.id, mk) })));
+    return withBalance.sort((a,b) =>
+      (a.property?a.property.name:"").localeCompare(b.property?b.property.name:"") ||
+      a.tenant.name.localeCompare(b.tenant.name));
+  },
   // Per-property rollup for a given month: counts + cash applied to that
   // month's rent (after old arrears are settled first), for the dashboard
   // snapshot's "by property" section — kept consistent with the paid/
@@ -1330,6 +1339,18 @@ const Repo = {
   async recentTransactions(limit=8){
     return (await this.allTransactionsDetailed()).slice(0,limit);
   },
+  // Every transaction of any type (payment or adjustment) dated within a
+  // range, oldest first, sorted so one tenant's whole history reads
+  // together — the shared source for the export reports' full transaction
+  // table. Voided transactions are kept (flagged, via isSettled/is_voided
+  // already attached by allTransactionsDetailed) rather than dropped, since
+  // this is an audit/tally table, not a "what actually counts" total.
+  async transactionsInRange(fromPeriod, toPeriod){
+    const all = await this.allTransactionsDetailed();
+    return all
+      .filter(x => { const mk = monthKey(x.date); return mk >= fromPeriod && mk <= toPeriod; })
+      .sort((a,b) => (a.tenant?.name||"").localeCompare(b.tenant?.name||"") || a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  },
   // Every rent payment physically received within a date range, oldest
   // first — for the "Payments received" table in exports, so each row can
   // be checked off against a manual ledger or a physical receipt. Date-based
@@ -1337,10 +1358,9 @@ const Repo = {
   // it's earmarked for) — a receipt is issued the day money is received,
   // regardless of which month's rent it covers.
   async paymentsReceivedInRange(fromPeriod, toPeriod){
-    const all = await this.allTransactionsDetailed();
-    return all
+    const rows = await this.transactionsInRange(fromPeriod, toPeriod);
+    return rows
       .filter(x => x.type === "RENT_PAYMENT" && !x.is_voided)
-      .filter(x => { const mk = monthKey(x.date); return mk >= fromPeriod && mk <= toPeriod; })
       .sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   },
   async allTenantsWithProperty(){
@@ -1644,8 +1664,7 @@ Screens.dashboard = async function(){
     logoImg: "icons/header-logo.png",
     fab: fabWrap("Add payment", "add", "openAddPayment()"),
     headerRight: `<div style="display:flex;gap:6px;">
-      <button class="icon-btn" onclick="openSnapshotModal()" title="Monthly snapshot">${ic("photo_camera")}</button>
-      <button class="icon-btn" onclick="openMonthlyReportModal()" title="Monthly report (PDF)">${ic("description")}</button>
+      <button class="icon-btn" onclick="openExportModal()" title="Export report">${ic("description")}</button>
     </div>`
   });
 };
@@ -2034,7 +2053,7 @@ Screens.settlement = async function(){
     <div class="meta" style="margin-top:4px;">Pick the same month twice to settle just one month, or widen the range to catch up on several unsettled months in one pass — only unsettled cash is ever touched, so it's safe even if part of the range was already settled.</div>
     ${!computed ? `<div class="warn-box" style="margin-top:10px;">${ic("warning")}"To" must be on or after "From".</div>` : `
     <div class="divider"></div>
-    <button class="btn secondary" onclick="exportSettlementReportPdf()">${ic("picture_as_pdf")}Export summary (PDF)</button>
+    <button class="btn secondary" onclick="openExportModal({mode:'settlement', fromMk:State.settlementFromPeriod, toMk:State.settlementToPeriod})">${ic("picture_as_pdf")}Export summary (PDF)</button>
     <div class="row" style="margin-top:14px;"><span class="meta">Collected (this period)</span><span class="num">${fmtMoney(computed.grossCollected)}</span></div>
     <div class="row"><span class="meta">− Owner rent (all properties)</span><span class="num">${fmtMoney(computed.ownerRentTotal)}</span></div>
     <div class="row"><span style="font-weight:700;">= Final total</span><span class="num" style="font-weight:700;">${fmtMoney(computed.finalTotal)}</span></div>
@@ -2141,10 +2160,66 @@ async function submitSettlement(){
   toast(unpaidCount ? `Settlement recorded — ${unpaidCount} transfer${unpaidCount===1?"":"s"} still owed` : "Settlement recorded — all transfers paid");
   goTab("cash");
 }
+// ---- Tenant rental status table (Table A) — one row per tenant, status
+// and point-in-time balance as of the report's "To" month. Reused
+// standalone in the Tenant Rental Status report and again, more compactly,
+// at the top of the Partner Settlement report, so either one reads on its
+// own if printed or shared by itself.
+function tenantStatusTableHtml(rows, toMk){
+  if (!rows.length) return `<div class="r-empty">No tenants yet.</div>`;
+  return `
+    <div class="r-note">Status and balance as of ${esc(fmtMonth(toMk))}.</div>
+    <table>
+      <tr><th>Property</th><th>Tenant</th><th class="r-num">Monthly rent</th><th>Status</th><th class="r-num">Applied this month</th><th class="r-num">Balance</th></tr>
+      ${rows.map(r=>`<tr>
+        <td>${esc(r.property?r.property.name:"—")}</td>
+        <td>${esc(r.tenant.name)}${r.tenant.archived?" (moved out)":""}</td>
+        <td class="r-num">${fmtMoney(r.due)}</td>
+        <td><span class="r-pill ${r.status}">${r.status==="paid"?"Paid":r.status==="partial"?"Partial":"Due"}</span></td>
+        <td class="r-num">${fmtMoney(r.appliedToCurrentMonth)}</td>
+        <td class="r-num"${r.balance>0.004?' style="color:#BA1A1A;font-weight:700;"':''}>${fmtMoney(r.balance)}</td>
+      </tr>`).join("")}
+    </table>`;
+}
+// ---- Full transaction history table (Table B) — every payment and
+// adjustment in the range, sorted so one tenant's whole history reads
+// together, with which month it was applied to (the same for_month
+// convention the live Transaction History screen's table uses) — for
+// tallying against a manual ledger or physical receipts. Voided
+// transactions are kept, flagged, not hidden — this is an audit table.
+function fullTransactionTableHtml(rows){
+  if (!rows.length) return `<div class="r-empty">No transactions recorded in this range.</div>`;
+  let total = 0;
+  const body = rows.map(x=>{
+    const isAdj = x.type === "ADJUSTMENT";
+    const amt = isAdj ? (x.adjustment_amount||0) : x.total_amount;
+    total += amt;
+    const forMonthLabel = isAdj ? "—" : esc(fmtMonth(x.for_month || monthKey(x.date)));
+    const receivedByLabel = x.receivedByNames && x.receivedByNames.length ? esc(x.receivedByNames.join(", ")) : "—";
+    const statusPill = x.is_voided ? `<span class="r-pill due">Voided</span>` : (x.isSettled ? `<span class="r-pill paid">Settled</span>` : `<span class="r-pill neutral">Unsettled</span>`);
+    return `<tr>
+      <td>${esc(fmtDate(x.date))}</td>
+      <td>${esc(x.property?x.property.name:"—")}</td>
+      <td>${esc(x.tenant?x.tenant.name:"—")}</td>
+      <td>${isAdj?"Adjustment":"Payment"}</td>
+      <td>${forMonthLabel}</td>
+      <td class="r-num"${isAdj && amt<0 ? ' style="color:#1E6E3C;"' : ''}>${amt<0&&isAdj?"−":""}${fmtMoney(Math.abs(amt))}</td>
+      <td>${receivedByLabel}</td>
+      <td>${statusPill}</td>
+    </tr>`;
+  }).join("");
+  return `
+    <table>
+      <tr><th>Date</th><th>Property</th><th>Tenant</th><th>Type</th><th>For month</th><th class="r-num">Amount</th><th>Received by</th><th>Status</th></tr>
+      ${body}
+      <tr class="r-row-total"><td colspan="5">Total</td><td class="r-num">${fmtMoney(total)}</td><td colspan="2"></td></tr>
+    </table>`;
+}
 // One row per rent payment received — date, tenant, property, amount, and
 // who received it — so every row can be checked off against a manual
-// ledger or a physical receipt. Shared by the Monthly Report and the
-// Settlement Summary, which both need exactly this for the same reason.
+// ledger or a physical receipt. Shared by the Tenant Rental Status report
+// (inside its full transaction table) and the Partner Settlement report
+// (as its own focused subset).
 function paymentsReceivedTableHtml(rows){
   if (!rows.length) return `<div class="r-empty">No payments recorded in this range.</div>`;
   const total = rows.reduce((s,x)=>s+(x.total_amount||0), 0);
@@ -2155,22 +2230,10 @@ function paymentsReceivedTableHtml(rows){
       <tr class="r-row-total"><td colspan="3">Total</td><td class="r-num">${fmtMoney(total)}</td><td></td></tr>
     </table>`;
 }
-// A detailed, printable breakdown of a settlement computation — reuses the
-// same #report-print-root + print CSS the Monthly Report already uses, so
-// it needs no new DOM/CSS. Exports whatever's currently previewed on the
-// Settlement screen (State._lastSettlement), whether or not it's been
-// recorded yet — this is meant to be reviewed/shared *before* finalizing.
-function buildSettlementReportHtml(computed, paymentsReceived){
-  const generatedDate = fmtDate(todayISO());
-  const paymentsTable = paymentsReceivedTableHtml(paymentsReceived||[]);
-  const periodLabel = fmtPeriodRange(computed.fromPeriod, computed.toPeriod);
-  const rHeader = `
-    <div class="r-header">
-      <div class="r-brand"><img src="icons/icon-192.png" class="r-logo" alt=""><div class="r-brand-name">myTenants</div></div>
-      <div class="r-doc-title"><div class="t1">Settlement Summary</div><div class="t2">${esc(periodLabel)}</div></div>
-    </div>`;
-  const rFooter = `<div class="r-footer"><div class="inner"><span>myTenants — Settlement Summary</span><span>Generated ${esc(generatedDate)}</span></div></div>`;
-
+// The owner-rent/partner-summary/suggested-transfers sections of a
+// settlement computation — shared by the Partner Settlement report and the
+// Full View's second page.
+function settlementSectionsHtml(computed){
   const byPropertyTable = computed.byProperty.length ? `
     <table>
       <tr><th>Property</th><th class="r-num">Collected</th></tr>
@@ -2230,9 +2293,100 @@ function buildSettlementReportHtml(computed, paymentsReceived){
     </table>` : `<div class="r-empty">Everyone already holds their fair share — nothing to transfer.</div>`;
 
   return `
+    <div class="r-section-title">Where the cash came from — by property</div>
+    ${byPropertyTable}
+    ${byMonthSection}
+
+    <div class="r-section-title">Where the cash came from — by receiver</div>
+    ${byReceiverTable}
+
+    <div class="r-section-title">Deductions — owner rent</div>
+    ${ownerRentTable}
+
+    <div class="r-section-title">Partner summary</div>
+    ${partnerTable}
+
+    <div class="r-section-title">Suggested transfers</div>
+    ${transfersTable}`;
+}
+// One shared data fetch for all 3 report modes — so switching modes (or
+// building the Full View's two pages) never re-fetches the same figures
+// twice. Tenant status/balance is "as of" the To month (a point-in-time
+// snapshot, same convention as arrearsAsOf/tenantBalanceAsOf elsewhere);
+// the transaction history and settlement computation cover the whole
+// From/To range.
+async function buildExportReportData(fromMk, toMk){
+  const [statusRows, txRows, computed, cashRows] = await Promise.all([
+    Repo.tenantStatusRows(toMk),
+    Repo.transactionsInRange(fromMk, toMk),
+    Repo.computeSettlement(fromMk, toMk),
+    Repo.cashInHandByReceiver(),
+  ]);
+  const cashTotal = cashRows.reduce((s,r)=>s+r.amount,0);
+  const collectedInRange = txRows.filter(x=>x.type==="RENT_PAYMENT" && !x.is_voided).reduce((s,x)=>s+x.total_amount,0);
+  const outstandingTotal = await Repo.arrearsAsOf(toMk);
+  const paidCount = statusRows.filter(s=>s.status==="paid").length;
+  const partialCount = statusRows.filter(s=>s.status==="partial").length;
+  const dueCount = statusRows.filter(s=>s.status==="due").length;
+  return { fromMk, toMk, statusRows, txRows, computed, cashRows, cashTotal, collectedInRange, outstandingTotal, paidCount, partialCount, dueCount };
+}
+// ---- Report 1: Tenant rental status — status table + every transaction
+// in the range, tabular, no charts (see docs/CALCULATIONS.md for the
+// underlying rules). One range-aware report, not one per month — a 3-month
+// range is 1 page, not 3.
+function buildTenantStatusReportHtml(data, {pageNum=1, pageTotal=1}={}){
+  const generatedDate = fmtDate(todayISO());
+  const periodLabel = fmtPeriodRange(data.fromMk, data.toMk);
+  const totalTenants = data.paidCount + data.partialCount + data.dueCount;
+  const rHeader = `
+    <div class="r-header">
+      <div class="r-brand"><img src="icons/icon-192.png" class="r-logo" alt=""><div class="r-brand-name">myTenants</div></div>
+      <div class="r-doc-title"><div class="t1">Tenant Rental Status</div><div class="t2">${esc(periodLabel)}</div></div>
+    </div>`;
+  const rFooter = `<div class="r-footer"><div class="inner"><span>myTenants — Tenant Rental Status</span><span>Page ${pageNum} of ${pageTotal}</span></div></div>`;
+  return `
     <div class="r-page">
       ${rHeader}
-      <h1 class="r-cover-title">${esc(periodLabel)} — Settlement Summary</h1>
+      <h1 class="r-cover-title">${esc(periodLabel)} — Tenant Rental Status</h1>
+      <div class="r-cover-sub">Generated ${esc(generatedDate)}</div>
+
+      <div class="r-stat-grid">
+        <div class="r-stat-box"><div class="r-label">COLLECTED IN RANGE</div><div class="r-value">${fmtMoney(data.collectedInRange)}</div></div>
+        <div class="r-stat-box"><div class="r-label">OUTSTANDING (AS OF ${esc(fmtMonth(data.toMk))})</div><div class="r-value">${fmtMoney(data.outstandingTotal)}</div></div>
+        <div class="r-stat-box"><div class="r-label">CASH IN HAND (UNSETTLED)</div><div class="r-value">${fmtMoney(data.cashTotal)}</div></div>
+        <div class="r-stat-box"><div class="r-label">TENANTS PAID</div><div class="r-value">${data.paidCount} / ${totalTenants}</div><div class="r-caption">${data.partialCount} partial · ${data.dueCount} due</div></div>
+      </div>
+
+      <div class="r-section-title">Tenant rental status</div>
+      ${tenantStatusTableHtml(data.statusRows, data.toMk)}
+
+      <div class="r-section-title">Full transaction history</div>
+      <div class="r-note">Every payment and adjustment in this range, one tenant's history together — for tallying against manual entries or payment receipts.</div>
+      ${fullTransactionTableHtml(data.txRows)}
+
+      ${rFooter}
+    </div>`;
+}
+// ---- Report 2: Partner settlement status — the same tenant status table,
+// plus everything useful for reconciling a settlement: payments received,
+// owner rent, partner summary, suggested transfers. Keeps its own compact
+// tenant status table so this stands on its own if printed/shared by
+// itself, separate from Report 1.
+function buildPartnerSettlementReportHtml(data, {pageNum=1, pageTotal=1}={}){
+  const generatedDate = fmtDate(todayISO());
+  const periodLabel = fmtPeriodRange(data.fromMk, data.toMk);
+  const computed = data.computed;
+  const paymentsReceived = data.txRows.filter(x=>x.type==="RENT_PAYMENT" && !x.is_voided);
+  const rHeader = `
+    <div class="r-header">
+      <div class="r-brand"><img src="icons/icon-192.png" class="r-logo" alt=""><div class="r-brand-name">myTenants</div></div>
+      <div class="r-doc-title"><div class="t1">Partner Settlement Status</div><div class="t2">${esc(periodLabel)}</div></div>
+    </div>`;
+  const rFooter = `<div class="r-footer"><div class="inner"><span>myTenants — Partner Settlement Status</span><span>Page ${pageNum} of ${pageTotal}</span></div></div>`;
+  return `
+    <div class="r-page">
+      ${rHeader}
+      <h1 class="r-cover-title">${esc(periodLabel)} — Partner Settlement Status</h1>
       <div class="r-cover-sub">Generated ${esc(generatedDate)} · A preview of the settlement computation for this range — not yet a record of what was actually recorded/paid</div>
 
       <div class="r-stat-grid">
@@ -2242,36 +2396,30 @@ function buildSettlementReportHtml(computed, paymentsReceived){
       </div>
       ${computed.unassigned>0.004 ? `<div class="r-callout">${fmtMoney(computed.unassigned)} was collected by a receiver with no partner linked, and is left out of everyone's share below.</div>` : ""}
 
+      <div class="r-section-title">Tenant rental status</div>
+      ${tenantStatusTableHtml(data.statusRows, data.toMk)}
+
       <div class="r-section-title">Payments received this period</div>
       <div class="r-note">Every rent payment received — for tallying against manual entries or payment receipts.</div>
-      ${paymentsTable}
+      ${paymentsReceivedTableHtml(paymentsReceived)}
 
-      <div class="r-section-title">Where the cash came from — by property</div>
-      ${byPropertyTable}
-      ${byMonthSection}
-
-      <div class="r-section-title">Where the cash came from — by receiver</div>
-      ${byReceiverTable}
-
-      <div class="r-section-title">Deductions — owner rent</div>
-      ${ownerRentTable}
-
-      <div class="r-section-title">Partner summary</div>
-      ${partnerTable}
-
-      <div class="r-section-title">Suggested transfers</div>
-      ${transfersTable}
+      ${settlementSectionsHtml(computed)}
 
       ${rFooter}
     </div>`;
 }
-async function exportSettlementReportPdf(){
-  const computed = State._lastSettlement;
-  if (!computed) return;
-  const paymentsReceived = await Repo.paymentsReceivedInRange(computed.fromPeriod, computed.toPeriod);
-  document.getElementById("report-print-root").innerHTML = buildSettlementReportHtml(computed, paymentsReceived);
+// ---- Report 3: Full view — page 1 is the full Report 1, page 2 is the
+// full Report 2, concatenated as-is (no deduplication) so either page
+// stands alone if printed or shared separately.
+function buildFullViewReportHtml(data){
+  return buildTenantStatusReportHtml(data, {pageNum:1, pageTotal:2}) + buildPartnerSettlementReportHtml(data, {pageNum:2, pageTotal:2});
+}
+// Shared print/NativePrint dance — previously duplicated between the
+// Monthly Report and Settlement Summary exports.
+function printReportHtml(html, jobName){
+  document.getElementById("report-print-root").innerHTML = html;
+  closeModal();
   setTimeout(() => {
-    const jobName = computed.fromPeriod===computed.toPeriod ? `myTenants-settlement-${computed.fromPeriod}` : `myTenants-settlement-${computed.fromPeriod}_to_${computed.toPeriod}`;
     // Android's WebView never implements window.print() (silent no-op) —
     // use the NativePrint plugin's Android PrintManager bridge instead.
     if (isNativeApp()) window.Capacitor.Plugins.NativePrint.print({ jobName });
@@ -2878,401 +3026,60 @@ async function updateReceiverSave(id){
   closeModal(); render();
 }
 
-// ---- Monthly Snapshot (shareable image) ----
-async function openSnapshotModal(){
+// ---- Export (unified PDF report: Tenant rental status / Partner
+// settlement status / Full view). Replaces the three previous, separate
+// export paths (a PNG "Monthly snapshot", a "Monthly report" PDF, and the
+// Settlement screen's own PDF) with one entry point and one From/To range
+// per report — a multi-month range is one cohesive report, not one
+// concatenated per month.
+function openExportModal({mode, fromMk, toMk} = {}){
   document.getElementById("modal-root")?.remove();
   const root = document.createElement("div"); root.id="modal-root"; document.body.appendChild(root);
-  const month = State.snapshotMonth || monthKey();
+  const fromMonth = fromMk || State.exportFromMonth || monthKey();
+  const toMonth = toMk || State.exportToMonth || monthKey();
+  const selectedMode = mode || State.exportMode || "tenant";
   root.innerHTML = `
     <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
       <div class="modal">
         <div class="sheet-handle"></div>
-        <div class="modal-head"><h2>Monthly snapshot</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
-        <label>Month</label>
-        <input type="month" id="snap-month" max="${monthKey()}" value="${month}" onchange="State.snapshotMonth=this.value; renderSnapshotPreview();">
-        <div class="snapshot-canvas-wrap"><canvas id="snap-canvas"></canvas></div>
-        <button class="btn" onclick="downloadSnapshot()">${ic("download")}Download PNG</button>
-        <button class="btn secondary" id="snap-share-btn" style="margin-top:8px;display:none;" onclick="shareSnapshot()">${ic("share")}Share image</button>
-      </div>
-    </div>
-  `;
-  await renderSnapshotPreview();
-  if (navigator.share && navigator.canShare){
-    const shareBtn = document.getElementById("snap-share-btn");
-    if (shareBtn) shareBtn.style.display = "block";
-  }
-}
-async function buildSnapshotData(mk){
-  const [collected, arrears, cashRows, statuses, byProperty] = await Promise.all([
-    Repo.totalCollectedForMonth(mk), Repo.arrearsAsOf(mk), Repo.cashInHandByReceiver(),
-    Repo.monthlyStatusForAllTenants(mk), Repo.monthlyPropertyBreakdown(mk)
-  ]);
-  const cashTotal = cashRows.reduce((s,r)=>s+r.amount,0);
-  const paidCount = statuses.filter(s=>s.status==="paid").length;
-  return { mk, collected, arrears, cashTotal, totalTenants: statuses.length, paidCount, byProperty };
-}
-function cssVar(name, fallback){ const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v || fallback; }
-async function renderSnapshotPreview(){
-  const mk = document.getElementById("snap-month")?.value || State.snapshotMonth || monthKey();
-  State.snapshotMonth = mk;
-  const data = await buildSnapshotData(mk);
-  const canvas = document.getElementById("snap-canvas");
-  if (!canvas) return;
-  await drawSnapshotCanvas(canvas, data);
-}
-async function drawSnapshotCanvas(canvas, data){
-  try{ await document.fonts.ready; }catch(e){}
-  const W = 1080;
-  const margin = 56;
-  const gap = 36;
-  const colW = (W - margin*2 - 20) / 2;
-  const primary = cssVar('--md-primary', '#2F6B5E');
-  const onPrimary = '#ffffff';
-  const ink = cssVar('--md-on-surface', '#191C1B');
-  const inkSoft = cssVar('--md-on-surface-variant', '#48504C');
-  const surfaceVariant = cssVar('--md-surface-variant', '#DDE5E0');
-  const line = cssVar('--md-outline-variant', '#E2E6E2');
-
-  const headerH = 200, statsH = 300, propRowH = 84, propHeaderH = 60, footerH = 90;
-  const propsH = data.byProperty.length ? propHeaderH + data.byProperty.length*propRowH : 0;
-  const H = headerH + gap + statsH + gap + propsH + gap + footerH;
-
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0,0,W,H);
-
-  ctx.fillStyle = primary;
-  ctx.fillRect(0,0,W,headerH);
-  ctx.fillStyle = onPrimary;
-  ctx.font = "700 52px Roboto, sans-serif";
-  ctx.fillText("myTenants", margin, 96);
-  ctx.font = "500 32px Roboto, sans-serif";
-  ctx.globalAlpha = 0.92;
-  ctx.fillText(fmtMonth(data.mk) + " summary", margin, 148);
-  ctx.globalAlpha = 1;
-
-  let y = headerH + gap;
-  function statTile(x, yy, w, h, label, value){
-    ctx.fillStyle = surfaceVariant;
-    roundRectPath(ctx, x, yy, w, h, 18);
-    ctx.fill();
-    ctx.fillStyle = inkSoft;
-    ctx.font = "500 22px Roboto, sans-serif";
-    ctx.fillText(label, x+24, yy+40);
-    ctx.fillStyle = ink;
-    ctx.font = "700 40px Roboto, sans-serif";
-    ctx.fillText(value, x+24, yy+h-28);
-  }
-  const tileH = (statsH - 20) / 2;
-  statTile(margin, y, colW, tileH, "Collected this month", fmtMoney(data.collected));
-  statTile(margin+colW+20, y, colW, tileH, "Arrears as of month end", fmtMoney(data.arrears));
-  statTile(margin, y+tileH+20, colW, tileH, "Cash in hand (unsettled)", fmtMoney(data.cashTotal));
-  statTile(margin+colW+20, y+tileH+20, colW, tileH, "Tenants paid", `${data.paidCount} / ${data.totalTenants}`);
-  y += statsH + gap;
-
-  if (data.byProperty.length){
-    ctx.fillStyle = ink;
-    ctx.font = "700 30px Roboto, sans-serif";
-    ctx.fillText("By property", margin, y+8);
-    y += propHeaderH;
-    for (const p of data.byProperty){
-      ctx.strokeStyle = line;
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(margin, y+propRowH-1); ctx.lineTo(W-margin, y+propRowH-1); ctx.stroke();
-
-      ctx.fillStyle = ink;
-      ctx.font = "600 30px Roboto, sans-serif";
-      ctx.fillText(truncateCanvasText(ctx, p.property.name, W - margin*2 - 260), margin, y+38);
-
-      ctx.fillStyle = inkSoft;
-      ctx.font = "400 22px Roboto, sans-serif";
-      ctx.fillText(`${p.paid} paid · ${p.partial} partial · ${p.due} due`, margin, y+70);
-
-      ctx.textAlign = 'right';
-      ctx.fillStyle = ink;
-      ctx.font = "700 30px Roboto, sans-serif";
-      ctx.fillText(fmtMoney(p.collected), W-margin, y+44);
-      ctx.textAlign = 'left';
-
-      y += propRowH;
-    }
-  }
-
-  ctx.fillStyle = inkSoft;
-  ctx.font = "400 20px Roboto, sans-serif";
-  ctx.textAlign = 'center';
-  ctx.fillText(`Generated ${fmtDate(todayISO())} · myTenants`, W/2, H-36);
-  ctx.textAlign = 'left';
-}
-function roundRectPath(ctx,x,y,w,h,r){
-  if (ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x,y,w,h,r); return; }
-  ctx.beginPath();
-  ctx.moveTo(x+r,y);
-  ctx.arcTo(x+w,y,x+w,y+h,r);
-  ctx.arcTo(x+w,y+h,x,y+h,r);
-  ctx.arcTo(x,y+h,x,y,r);
-  ctx.arcTo(x,y,x+w,y,r);
-  ctx.closePath();
-}
-function truncateCanvasText(ctx, text, maxWidth){
-  if (ctx.measureText(text).width <= maxWidth) return text;
-  let t = text;
-  while (t.length>1 && ctx.measureText(t+"…").width > maxWidth) t = t.slice(0,-1);
-  return t + "…";
-}
-function downloadSnapshot(){
-  const canvas = document.getElementById("snap-canvas");
-  if (!canvas) return;
-  const filename = `mytenants-${State.snapshotMonth||monthKey()}.png`;
-  if (isNativeApp()){
-    canvas.toBlob(async (blob) => {
-      if (!blob) return;
-      await nativeSaveAndShare(filename, blob, "myTenants monthly snapshot");
-      toast("Snapshot saved");
-    }, "image/png");
-    return;
-  }
-  const url = canvas.toDataURL("image/png");
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  toast("Snapshot downloaded");
-}
-async function shareSnapshot(){
-  const canvas = document.getElementById("snap-canvas");
-  if (!canvas) return;
-  const filename = `mytenants-${State.snapshotMonth||monthKey()}.png`;
-  canvas.toBlob(async (blob) => {
-    if (!blob) return;
-    if (isNativeApp()){
-      try{ await nativeSaveAndShare(filename, blob, "myTenants monthly snapshot"); }
-      catch(e){ /* user cancelled the share sheet */ }
-      return;
-    }
-    const file = new File([blob], filename, {type:"image/png"});
-    try{
-      if (navigator.canShare && navigator.canShare({files:[file]})){
-        await navigator.share({files:[file], title:"myTenants monthly snapshot"});
-      } else {
-        toast("Sharing isn't supported on this device — use Download instead");
-      }
-    }catch(e){ /* user cancelled the share sheet */ }
-  }, "image/png");
-}
-
-// ---- Monthly Report (PDF export via the browser's print engine) ----
-function openMonthlyReportModal(){
-  document.getElementById("modal-root")?.remove();
-  const root = document.createElement("div"); root.id="modal-root"; document.body.appendChild(root);
-  const fromMonth = State.reportFromMonth || monthKey();
-  const toMonth = State.reportToMonth || monthKey();
-  root.innerHTML = `
-    <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
-      <div class="modal">
-        <div class="sheet-handle"></div>
-        <div class="modal-head"><h2>Monthly report</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
-        <div class="meta" style="margin-bottom:10px;">A detailed PDF covering collections, defaulters, property-by-property status, cash in hand, and partner settlement for the month(s) you pick. Pick the same month twice for a single-month report, or widen the range to combine several months into one PDF.</div>
+        <div class="modal-head"><h2>Export report</h2><button class="icon-btn" onclick="closeModal()">${ic("close")}</button></div>
+        <div class="meta" style="margin-bottom:10px;">A tabular PDF for the month(s) you pick. Pick the same month twice for a single month, or widen the range to cover several at once.</div>
         <label>From</label>
         <input type="month" id="report-from-month" max="${monthKey()}" value="${fromMonth}">
         <label>To</label>
         <input type="month" id="report-to-month" max="${monthKey()}" value="${toMonth}">
-        <button class="btn" style="margin-top:16px;" onclick="exportMonthlyReportPdf()">${ic("picture_as_pdf")}Export PDF</button>
+        <label style="margin-top:10px;">Report</label>
+        <div class="segmented" style="flex-direction:column;height:auto;">
+          <button class="${selectedMode==="tenant"?"active":""}" style="text-align:left;padding:10px 12px;" onclick="setExportMode('tenant')">Tenant rental status</button>
+          <button class="${selectedMode==="settlement"?"active":""}" style="text-align:left;padding:10px 12px;" onclick="setExportMode('settlement')">Partner settlement status</button>
+          <button class="${selectedMode==="full"?"active":""}" style="text-align:left;padding:10px 12px;" onclick="setExportMode('full')">Full view (both)</button>
+        </div>
+        <button class="btn" style="margin-top:16px;" onclick="exportReportPdf()">${ic("picture_as_pdf")}Export PDF</button>
         <div class="meta" style="margin-top:10px;">This opens your browser's print dialog — choose "Save as PDF" as the destination.</div>
       </div>
     </div>
   `;
 }
-async function buildMonthlyReportData(mk){
-  const [collected, cashRows, monthlyStatuses, portfolio, trend, defaulters, partnerSettlement, transfersAll, paymentsReceived] = await Promise.all([
-    Repo.totalCollectedForMonth(mk), Repo.cashInHandByReceiver(), Repo.monthlyStatusForAllTenants(mk),
-    Repo.portfolioTotals(), Repo.monthlyCollections(6, mk), Repo.defaultersAsOf(mk),
-    Repo.reportPartnerSettlementSummary(mk), Repo.transferHistory(), Repo.paymentsReceivedInRange(mk, mk)
-  ]);
-  const outstandingTotal = defaulters.reduce((s,t)=>s+t.current_balance,0);
-  const cashTotal = cashRows.reduce((s,r)=>s+r.amount,0);
-  const paidCount = monthlyStatuses.filter(s=>s.status==="paid").length;
-  const partialCount = monthlyStatuses.filter(s=>s.status==="partial").length;
-  const dueCount = monthlyStatuses.filter(s=>s.status==="due").length;
-
-  const byPropMap = {};
-  for (const t of defaulters){
-    const key = t.property ? t.property.name : "Unknown property";
-    byPropMap[key] = (byPropMap[key]||0) + t.current_balance;
-  }
-  const outstandingByProperty = Object.entries(byPropMap).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
-
-  const propMap = {};
-  for (const row of monthlyStatuses){
-    const pname = row.property ? row.property.name : "Unknown property";
-    (propMap[pname] ||= []).push(row);
-  }
-  const propertyDetail = Object.entries(propMap)
-    .map(([name, rows]) => ({ name, rows: rows.sort((a,b)=>a.tenant.name.localeCompare(b.tenant.name)) }))
-    .sort((a,b)=>a.name.localeCompare(b.name));
-
-  const transfersThisPeriod = transfersAll.filter(t=>t.period===mk);
-
-  return { mk, collected, outstandingTotal, cashTotal, cashRows, paidCount, partialCount, dueCount, portfolio, trend, defaulters, outstandingByProperty, propertyDetail, partnerSettlement, transfersThisPeriod, paymentsReceived };
+function setExportMode(mode){
+  const fromMk = document.getElementById("report-from-month")?.value;
+  const toMk = document.getElementById("report-to-month")?.value;
+  State.exportMode = mode;
+  openExportModal({mode, fromMk, toMk});
 }
-function buildMonthlyReportHtml(data, showPeriodInFooter){
-  const generatedDate = fmtDate(todayISO());
-  const periodLabel = fmtMonth(data.mk);
-  const totalTenantsThisMonth = data.paidCount + data.partialCount + data.dueCount;
-  const rHeader = `
-    <div class="r-header">
-      <div class="r-brand"><img src="icons/icon-192.png" class="r-logo" alt=""><div class="r-brand-name">myTenants</div></div>
-      <div class="r-doc-title"><div class="t1">Monthly Report</div><div class="t2">${esc(periodLabel)}</div></div>
-    </div>`;
-  // When several months are concatenated into one PDF (see exportMonthlyReportPdf),
-  // each month keeps its own self-contained "Page N of 3" numbering rather than a
-  // running count across the whole document — simpler and less risky than making
-  // every page aware of its position in the full multi-month set — but the footer
-  // gets a month label so it's clear which month's pages you're looking at.
-  const rFooter = (n,total) => `<div class="r-footer"><div class="inner"><span>myTenants — Monthly Report${showPeriodInFooter ? " · " + esc(periodLabel) : ""}</span><span>Page ${n} of ${total}</span></div></div>`;
-
-  const page1 = `
-    <div class="r-page">
-      ${rHeader}
-      <h1 class="r-cover-title">${esc(periodLabel)} — Portfolio Summary</h1>
-      <div class="r-cover-sub">Generated ${esc(generatedDate)} · Covers ${data.portfolio.properties} propert${data.portfolio.properties===1?"y":"ies"}, ${data.portfolio.tenants} tenants</div>
-
-      <div class="r-stat-grid">
-        <div class="r-stat-box"><div class="r-label">COLLECTED THIS MONTH</div><div class="r-value">${fmtMoney(data.collected)}</div></div>
-        <div class="r-stat-box"><div class="r-label">OUTSTANDING RENT (AS OF MONTH END)</div><div class="r-value">${fmtMoney(data.outstandingTotal)}</div><div class="r-caption">Unpaid rent still owed by tenants</div></div>
-        <div class="r-stat-box"><div class="r-label">CASH IN HAND (UNSETTLED)</div><div class="r-value">${fmtMoney(data.cashTotal)}</div><div class="r-caption">Collected from tenants, not yet split between partners — may include earlier months too</div></div>
-        <div class="r-stat-box"><div class="r-label">TENANTS PAID</div><div class="r-value">${data.paidCount} / ${totalTenantsThisMonth}</div></div>
-      </div>
-
-      <div class="r-chart-box">
-        <div class="r-ct">Collections trend — last 6 months</div>
-        <div class="r-cs">Rent payments only</div>
-        ${data.trend.some(t=>t.value>0) ? svgBarChart(data.trend, {height:130}) : `<div class="r-empty">No payments recorded in this range</div>`}
-      </div>
-
-      <div class="r-two-col">
-        <div class="r-chart-box">
-          <div class="r-ct">Outstanding rent by property</div>
-          <div class="r-cs">Where outstanding rent sits</div>
-          ${data.outstandingByProperty.length ? `<div class="chart-flex">${svgDonut(data.outstandingByProperty, {size:110, stroke:14, centerLabel:fmtMoney(data.outstandingTotal).replace("₹","₹\n")})}${chartLegend(data.outstandingByProperty)}</div>` : `<div class="r-empty">No outstanding rent this month</div>`}
-        </div>
-        <div class="r-chart-box">
-          <div class="r-ct">Tenant status this month</div>
-          <div class="r-cs">Across the whole portfolio</div>
-          <table>
-            <tr><td>Paid</td><td class="r-num" style="color:#1E6E3C;font-weight:700;">${data.paidCount}</td></tr>
-            <tr><td>Partial</td><td class="r-num" style="color:#6F5D1E;font-weight:700;">${data.partialCount}</td></tr>
-            <tr><td>Due</td><td class="r-num" style="color:#BA1A1A;font-weight:700;">${data.dueCount}</td></tr>
-          </table>
-        </div>
-      </div>
-      ${rFooter(1,4)}
-    </div>`;
-
-  const page2 = `
-    <div class="r-page">
-      ${rHeader}
-      <div class="r-section-title">Payments received this month</div>
-      <div class="r-note">Every rent payment received — for tallying against manual entries or payment receipts.</div>
-      ${paymentsReceivedTableHtml(data.paymentsReceived||[])}
-      ${rFooter(2,4)}
-    </div>`;
-
-  const defaultersTable = data.defaulters.length ? `
-    <table>
-      <tr><th>Tenant</th><th>Property</th><th class="r-num">Amount due</th></tr>
-      ${data.defaulters.map(t=>`<tr><td>${esc(t.name)}</td><td>${esc(t.property?t.property.name:"—")}</td><td class="r-num">${fmtMoney(t.current_balance)}</td></tr>`).join("")}
-      <tr class="r-row-total"><td colspan="2">Total outstanding</td><td class="r-num">${fmtMoney(data.outstandingTotal)}</td></tr>
-    </table>` : `<div class="r-empty">No tenants owe anything this month.</div>`;
-
-  const propertySections = data.propertyDetail.length ? data.propertyDetail.map(p => `
-    <div class="r-section-title">Property detail — ${esc(p.name)}</div>
-    <table>
-      <tr><th>Tenant</th><th class="r-num">Monthly rent</th><th class="r-num">Applied to this month</th><th>Status</th></tr>
-      ${p.rows.map(r => `
-        <tr>
-          <td>${esc(r.tenant.name)}${r.tenant.archived?" (moved out)":""}</td>
-          <td class="r-num">${fmtMoney(r.due)}</td>
-          <td class="r-num">${fmtMoney(r.appliedToCurrentMonth)}</td>
-          <td><span class="r-pill ${r.status}">${r.status==="paid"?"Paid":r.status==="partial"?"Partial":"Due"}</span></td>
-        </tr>`).join("")}
-    </table>`).join("") : `<div class="r-empty">No properties with tenants yet.</div>`;
-
-  const page3 = `
-    <div class="r-page">
-      ${rHeader}
-      <div class="r-section-title">Defaulter list</div>
-      ${defaultersTable}
-      ${propertySections}
-      ${rFooter(3,4)}
-    </div>`;
-
-  const cashTable = data.cashRows.length ? `
-    <table>
-      <tr><th>Receiver</th><th>Reports to</th><th class="r-num">Amount held</th></tr>
-      ${data.cashRows.map(r=>`<tr><td>${esc(r.receiver.name)}</td><td>${r.partner?esc(r.partner.name)+"'s pool":"No partner linked"}</td><td class="r-num">${fmtMoney(r.amount)}</td></tr>`).join("")}
-      <tr class="r-row-total"><td colspan="2">Total unsettled</td><td class="r-num">${fmtMoney(data.cashTotal)}</td></tr>
-    </table>` : `<div class="r-empty">No cash currently held by any receiver.</div>`;
-
-  const settlementTable = data.partnerSettlement.rows.length ? `
-    <table>
-      <tr><th>Partner</th><th class="r-num">Share</th><th class="r-num">Collected</th><th class="r-num">Entitled</th><th class="r-num">Net position</th></tr>
-      ${data.partnerSettlement.rows.map(r=>{
-        const netLabel = Math.abs(r.net)<0.005 ? `<span style="color:#6B6A64;">Settled</span>`
-          : r.net>0 ? `<span style="color:#1E6E3C;font-weight:700;">Receives ${fmtMoney(r.net)}</span>`
-          : `<span style="color:#BA1A1A;font-weight:700;">Pays ${fmtMoney(Math.abs(r.net))}</span>`;
-        return `<tr><td>${esc(r.name)}</td><td class="r-num">${r.share_percent}%</td><td class="r-num">${fmtMoney(r.collected)}</td><td class="r-num">${fmtMoney(r.entitled)}</td><td class="r-num">${netLabel}</td></tr>`;
-      }).join("")}
-    </table>
-    <div class="r-note">"Collected" is cash gathered via receivers; "entitled" is their share of the final total (collected minus owner rent). Net position is the gap between the two — what they should pay in, or receive, to end up with exactly their fair share. See "Recorded transfers" below for who it actually moves between.</div>
-    ${!data.partnerSettlement.recorded ? `<div class="r-callout">No settlement has been recorded yet for ${esc(periodLabel)} — figures above are a live preview, not a finalized record.</div>` : ""}
-  ` : `<div class="r-empty">Add partners to see a settlement summary.</div>`;
-
-  const transfersTable = data.transfersThisPeriod.length ? `
-    <table>
-      <tr><th>From</th><th></th><th>To</th><th class="r-num">Amount</th><th>Status</th></tr>
-      ${data.transfersThisPeriod.map(t=>`<tr><td>${esc(t.from_name)}</td><td>→</td><td>${esc(t.to_name)}</td><td class="r-num">${fmtMoney(t.paid_amount)}</td><td><span class="r-pill ${t.status==='paid'?'paid':t.status==='partial'?'partial':'due'}">${t.status==='paid'?'Paid':t.status==='partial'?'Partial':'Unpaid'}</span></td></tr>`).join("")}
-    </table>
-    ${data.transfersThisPeriod.some(t=>t.remaining_amount>0.004) ? `<div class="r-callout">${data.transfersThisPeriod.filter(t=>t.remaining_amount>0.004).map(t=>`${fmtMoney(t.remaining_amount)} still owed from ${esc(t.from_name)} to ${esc(t.to_name)}`).join("; ")} — carried forward.</div>` : ""}
-  ` : `<div class="r-empty">No settlement has been recorded for ${esc(periodLabel)} yet.</div>`;
-
-  const page4 = `
-    <div class="r-page">
-      ${rHeader}
-      <div class="r-section-title">Cash in hand — by receiver</div>
-      ${cashTable}
-      <div class="r-section-title">Partner settlement summary</div>
-      ${settlementTable}
-      <div class="r-section-title">Recorded transfers this period</div>
-      ${transfersTable}
-      ${rFooter(4,4)}
-    </div>`;
-
-  return page1 + page2 + page3 + page4;
-}
-async function exportMonthlyReportPdf(){
+async function exportReportPdf(){
   const fromMk = document.getElementById("report-from-month").value || monthKey();
   const toMk = document.getElementById("report-to-month")?.value || fromMk;
   if (toMk < fromMk) return toast("'To' month must be on or after 'From' month");
-  State.reportFromMonth = fromMk;
-  State.reportToMonth = toMk;
-  const months = [];
-  for (let mk = fromMk; mk <= toMk; mk = addMonths(mk, 1)) months.push(mk);
-  let html = "";
-  for (const mk of months){
-    const data = await buildMonthlyReportData(mk);
-    html += buildMonthlyReportHtml(data, months.length > 1);
-  }
-  document.getElementById("report-print-root").innerHTML = html;
-  closeModal();
-  setTimeout(() => {
-    // Android's WebView never implements window.print() (silent no-op) —
-    // use the NativePrint plugin's Android PrintManager bridge instead.
-    const jobName = fromMk === toMk ? `myTenants-${fromMk}` : `myTenants-${fromMk}_to_${toMk}`;
-    if (isNativeApp()) window.Capacitor.Plugins.NativePrint.print({ jobName });
-    else window.print();
-  }, 150);
+  const mode = State.exportMode || "tenant";
+  State.exportFromMonth = fromMk;
+  State.exportToMonth = toMk;
+  const data = await buildExportReportData(fromMk, toMk);
+  const html = mode === "settlement" ? buildPartnerSettlementReportHtml(data)
+    : mode === "full" ? buildFullViewReportHtml(data)
+    : buildTenantStatusReportHtml(data);
+  const modeSlug = mode === "settlement" ? "settlement" : mode === "full" ? "full-view" : "tenant-status";
+  const jobName = fromMk === toMk ? `myTenants-${modeSlug}-${fromMk}` : `myTenants-${modeSlug}-${fromMk}_to_${toMk}`;
+  printReportHtml(html, jobName);
 }
 
 // ---- Add Payment (full screen bottom sheet) ----
@@ -3601,8 +3408,7 @@ Object.assign(window, {
   setRentChangeMode, refreshRentCorrectionPreview, submitCorrectRent, submitScheduleRent,
   savePartner, updatePartnerSave, removePartner,
   saveReceiver, removeReceiver, importBackup,
-  openSnapshotModal, renderSnapshotPreview, downloadSnapshot, shareSnapshot,
-  openMonthlyReportModal, exportMonthlyReportPdf,
+  openExportModal, setExportMode, exportReportPdf,
   openAddPayment, apToggleRepair, apReceiptChosen, apShowMultiSplit, apShowSingleReceiver, apAddSplitRow, apRefreshSplitSum, submitAddPayment,
   openTxnDetail, openEditTxn, openEditPayment, submitEditPayment, openEditAdjustment, submitEditAdjustment, voidTxnConfirm, deleteTxnPermanentlyConfirm, submitSettlement, toggleTransferPaid, refreshTransferNote, Repo, State
 });
