@@ -375,12 +375,6 @@
 const DB_NAME = "mytenants";
 const DB_VERSION = 3;
 const STORES = ["properties","tenants","partners","receivers","transactions","transaction_splits","partner_settlements","partner_transfers","audit_log"];
-// The "who/what" roster — owners (via properties), partners, tenants,
-// receivers — versus the "what happened" financial event log. Same stores
-// as STORES, just split into the two halves the backup screen exports
-// separately (see Repo.exportMasterDataCopy/exportTransactionDataCopy).
-const MASTER_STORES = ["properties","tenants","partners","receivers"];
-const TRANSACTION_STORES = ["transactions","transaction_splits","partner_settlements","partner_transfers","audit_log"];
 const PALETTE = ["#2F6B5E","#B3402A","#9A6B00","#3B6EA5","#7E57C2","#4B635B","#C2410C","#0E7490"];
 
 // ---------- tiny helpers ----------
@@ -554,25 +548,6 @@ async function nativeSaveAndShare(filename, blob, title){
   const data = await blobToBase64(blob);
   const { uri } = await Filesystem.writeFile({ path: filename, data, directory: "CACHE" });
   await Share.share({ title: title||filename, url: uri });
-}
-// Shared by every export button — native share sheet on the Android app,
-// a plain browser download everywhere else.
-async function downloadOrShareBlob(filename, blob, title){
-  if (isNativeApp()){
-    await nativeSaveAndShare(filename, blob, title);
-    return;
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-}
-// Quotes a CSV field only when it needs it (contains a comma, quote, or
-// newline) — keeps plain numbers/short text readable, per RFC 4180.
-function csvCell(value){
-  const s = value===null||value===undefined ? "" : String(value);
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
 }
 
 // =====================================================================
@@ -1426,7 +1401,17 @@ const Repo = {
     for (const s of STORES) dump[s] = await getAll(s);
     dump._exported_at = new Date().toISOString();
     dump._version = DB_VERSION;
-    await downloadOrShareBlob(`mytenants-backup-${todayISO()}.json`, new Blob([JSON.stringify(dump, null, 2)], {type:"application/json"}), "myTenants backup");
+    const blob = new Blob([JSON.stringify(dump, null, 2)], {type:"application/json"});
+    const filename = `mytenants-backup-${todayISO()}.json`;
+    if (isNativeApp()){
+      await nativeSaveAndShare(filename, blob, "myTenants backup");
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
   },
   async importDatabaseCopy(json){
     const data = JSON.parse(json);
@@ -1434,50 +1419,6 @@ const Repo = {
       if (!Array.isArray(data[s])) continue;
       await tx(s, "readwrite", store => { store.clear(); data[s].forEach(row => store.put(row)); });
     }
-  },
-  // ---- Split backups: master/reference data vs. transactional data ----
-  // The single combined backup above stays as the one true restorable
-  // snapshot; these are for reviewing or archiving just one half — e.g.
-  // handing an accountant every payment ever recorded, without also
-  // handing over the full tenant/partner roster.
-  async exportMasterDataCopy(){
-    const dump = {};
-    for (const s of MASTER_STORES) dump[s] = await getAll(s);
-    dump._exported_at = new Date().toISOString();
-    dump._version = DB_VERSION;
-    await downloadOrShareBlob(`mytenants-master-data-${todayISO()}.json`, new Blob([JSON.stringify(dump, null, 2)], {type:"application/json"}), "myTenants master data backup");
-  },
-  async exportTransactionDataCopy(){
-    const dump = {};
-    for (const s of TRANSACTION_STORES) dump[s] = await getAll(s);
-    dump._exported_at = new Date().toISOString();
-    dump._version = DB_VERSION;
-    await downloadOrShareBlob(`mytenants-transactions-${todayISO()}.json`, new Blob([JSON.stringify(dump, null, 2)], {type:"application/json"}), "myTenants transaction data backup");
-  },
-  // A flat, spreadsheet-friendly ledger of every payment/adjustment —
-  // reuses allTransactionsDetailed's tenant/property/receiver joins so it
-  // reads the same as the in-app Transaction history table, not just raw
-  // foreign-key IDs.
-  async exportTransactionsCsv(){
-    const rows = await this.allTransactionsDetailed();
-    const header = ["Date","Type","Tenant","Property","Amount","Repair amount","For month","Received by","Note","Voided"];
-    const lines = [header.map(csvCell).join(",")];
-    for (const x of rows){
-      const isAdj = x.type === "ADJUSTMENT";
-      lines.push([
-        x.date,
-        isAdj ? "Adjustment" : "Payment",
-        x.tenant ? x.tenant.name : "",
-        x.property ? x.property.name : "",
-        isAdj ? (x.adjustment_amount||0) : (x.total_amount||0),
-        isAdj ? "" : (x.repair_amount||0),
-        isAdj ? "" : (x.for_month || monthKey(x.date)),
-        (x.receivedByNames||[]).join("; "),
-        x.note || "",
-        x.is_voided ? "Yes" : "No",
-      ].map(csvCell).join(","));
-    }
-    await downloadOrShareBlob(`mytenants-transactions-${todayISO()}.csv`, new Blob([lines.join("\r\n")], {type:"text/csv"}), "myTenants transactions (CSV)");
   }
 };
 
@@ -2462,18 +2403,10 @@ Screens.partners = async function(){
     <div class="meta" style="margin-bottom:10px;">${signedIn
       ? "Signed in, so this data also syncs to the cloud automatically — but export a backup regularly anyway as an extra safety net, and it's still how you'd bring everything over to a browser or device that isn't signed in."
       : "Your data lives only in this browser. Export a backup regularly, and use it to bring everything over whenever you update this app's file, switch browsers, or move to a different device."}</div>
-    <button class="btn ghost" onclick="Repo.exportDatabaseCopy()">${ic("download")}Export full backup (.json)</button>
+    <button class="btn ghost" onclick="Repo.exportDatabaseCopy()">${ic("download")}Export backup (.json)</button>
     <div style="height:10px;"></div>
     <label>Restore from backup</label>
     <input type="file" accept="application/json" onchange="importBackup(event)">
-
-    <div class="section-title">${ic("call_split")}Split backups</div>
-    <div class="meta" style="margin-bottom:10px;">The full backup above is the one to use for restoring everything. These export just one half — e.g. for handing an accountant every payment on record without the tenant/partner roster, or vice versa.</div>
-    <button class="btn ghost" onclick="Repo.exportMasterDataCopy()">${ic("groups")}Master data (properties, tenants, partners, receivers) — .json</button>
-    <div style="height:8px;"></div>
-    <button class="btn ghost" onclick="Repo.exportTransactionDataCopy()">${ic("receipt_long")}Transaction data (payments, adjustments, settlements) — .json</button>
-    <div style="height:8px;"></div>
-    <button class="btn ghost" onclick="Repo.exportTransactionsCsv()">${ic("table_view")}Transactions ledger — .csv</button>
 
     <div class="section-title">${ic(bulkLocked?"lock":"playlist_add")}One-time setup</div>
     <div class="meta" style="margin-bottom:10px;">${bulkLocked ? "Locked to prevent accidentally re-entering old data — open it to unlock." : "New here and bringing in old balances or payments from before this app? Do it for every tenant in one pass instead of one at a time."}</div>
