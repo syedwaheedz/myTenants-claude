@@ -93,6 +93,39 @@ test("Report 1 (Tenant rental status) and Report 2 (Partner settlement status) b
   } finally { await close(); }
 });
 
+test("Report 1's Arrears breakdown by tenant includes every tenant (paid and unpaid) with one column per month in the export range", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const toMk = monthKey();
+      const fromMk = addMonths(toMk, -1);
+      const prop = await Repo.addProperty({ name: "Arrears Export Property" });
+
+      // In arrears: 2 months accrued (5000 x 2 = 10000), paid 3000.
+      const t1 = await Repo.addTenant({ property_id: prop.id, name: "Behind Tenant", monthly_rent: 5000 });
+      await Repo.updateTenant(t1.id, { start_date: fromMk + "-01", rent_history: [{ effective_month: fromMk, rent: 5000 }], last_accrual_month: toMk });
+      await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 3000, date: fromMk + "-05" });
+
+      // Fully paid up both months — must still appear.
+      const t2 = await Repo.addTenant({ property_id: prop.id, name: "Current Tenant", monthly_rent: 4000 });
+      await Repo.updateTenant(t2.id, { start_date: fromMk + "-01", rent_history: [{ effective_month: fromMk, rent: 4000 }], last_accrual_month: toMk });
+      await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 4000, date: fromMk + "-05" });
+      await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 4000, date: toMk + "-05" });
+
+      const data = await buildExportReportData(fromMk, toMk);
+      const html = buildTenantStatusReportHtml(data);
+      return { html, monthsInRange: data.monthsInRange, arrearsRows: data.arrearsRows.map(r => ({ name: r.tenant.name, balance: r.balance })) };
+    });
+    assert.equal(result.monthsInRange.length, 2, "one column per month in the From/To range");
+    assert.ok(result.html.includes("Arrears breakdown by tenant"));
+    assert.ok(result.html.includes("Behind Tenant"));
+    assert.ok(result.html.includes("Current Tenant"), "fully-paid tenants must still appear, not be filtered out");
+    assert.equal(result.arrearsRows.find(r => r.name === "Behind Tenant").balance, 7000, "10000 accrued - 3000 paid");
+    assert.equal(result.arrearsRows.find(r => r.name === "Current Tenant").balance, 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test("Full view report is exactly 2 pages — page 1 tenant status + full transactions, page 2 partner settlement", async () => {
   const { page, errors, close } = await harness.newPage();
   try {

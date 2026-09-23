@@ -10,33 +10,44 @@ let harness;
 before(async () => { harness = await createHarness(); });
 after(async () => { await harness.close(); });
 
-test("Repo.arrearsBreakdownRows sums accrued rent, adjustments and payments correctly, and excludes tenants with no arrears", async () => {
+test("Repo.arrearsBreakdownRows sums accrued rent, adjustments and payments correctly, includes every tenant (even fully paid ones), and attaches a per-month Paid/Partial/Due breakdown", async () => {
   const { page, errors, close } = await harness.newPage();
   try {
     const result = await page.evaluate(async () => {
       const mk = monthKey();
-      const startMk = addMonths(mk, -2); // 3 months of accrual: startMk, +1, mk
+      const prevMk = addMonths(mk, -1);
+      const startMk = addMonths(mk, -2); // 3 months of accrual: startMk, prevMk, mk
       const prop = await Repo.addProperty({ name: "P" });
 
-      // 3 months x 5000 = 15000 accrued, a -500 credit adjustment, a 4000 payment.
+      // 3 months x 5000 = 15000 accrued, a -500 credit adjustment, a 4000 payment this month.
       const t1 = await Repo.addTenant({ property_id: prop.id, name: "Arrears Tenant", monthly_rent: 5000 });
       await Repo.updateTenant(t1.id, { start_date: startMk + "-01", rent_history: [{ effective_month: startMk, rent: 5000 }], last_accrual_month: mk });
       await Repo.recordBalanceAdjustment({ tenant_id: t1.id, amount: -500, date: mk + "-01" });
       await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 4000, date: mk + "-05" });
 
-      // Fully paid up — must not appear in the results at all.
+      // Fully paid up — must still appear (with a zero balance), not be excluded.
       const t2 = await Repo.addTenant({ property_id: prop.id, name: "Clean Tenant", monthly_rent: 3000 });
       await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 3000, date: mk + "-05" });
 
-      const rows = await Repo.arrearsBreakdownRows(mk);
-      return { rows: rows.map(r => ({ name: r.tenant.name, totalRentOwed: r.totalRentOwed, totalPaid: r.totalPaid, balance: r.balance })) };
+      const monthsRange = [prevMk, mk];
+      const rows = await Repo.arrearsBreakdownRows(mk, monthsRange);
+      return {
+        rows: rows.map(r => ({
+          name: r.tenant.name, totalRentOwed: r.totalRentOwed, totalPaid: r.totalPaid, balance: r.balance,
+          monthlyPrev: r.monthly[prevMk] && r.monthly[prevMk].status,
+          monthlyThis: r.monthly[mk] && r.monthly[mk].status,
+        })),
+      };
     });
-    assert.equal(result.rows.length, 1, "only the tenant with real arrears should appear");
-    const r = result.rows[0];
-    assert.equal(r.name, "Arrears Tenant");
-    assert.equal(r.totalRentOwed, 14500, "15000 accrued - 500 credit adjustment");
-    assert.equal(r.totalPaid, 4000);
-    assert.equal(r.balance, 10500);
+    assert.equal(result.rows.length, 2, "every tenant must appear, including the fully-paid one");
+    const arrearsRow = result.rows.find(r => r.name === "Arrears Tenant");
+    assert.equal(arrearsRow.totalRentOwed, 14500, "15000 accrued - 500 credit adjustment");
+    assert.equal(arrearsRow.totalPaid, 4000);
+    assert.equal(arrearsRow.balance, 10500);
+    assert.equal(arrearsRow.monthlyThis, "due", "the 4000 payment was needed to catch up on prior arrears, not cover this month");
+    const cleanRow = result.rows.find(r => r.name === "Clean Tenant");
+    assert.equal(cleanRow.balance, 0);
+    assert.equal(cleanRow.monthlyThis, "paid");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
