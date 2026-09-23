@@ -304,6 +304,10 @@
   .segmented.vertical button.active{background:var(--surface);box-shadow:var(--shadow-1);}
   .month-summary{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);margin:2px 2px 12px 2px;flex-wrap:wrap;}
   .month-summary b{color:var(--ink);}
+  .info-toggle{margin:6px 0 14px 0;}
+  .info-toggle summary{cursor:pointer;font-size:12.5px;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:4px;list-style:none;}
+  .info-toggle summary::-webkit-details-marker{display:none;}
+  .info-note{background:var(--md-surface-variant);border-radius:10px;padding:10px 12px;margin-top:6px;font-size:12.5px;color:var(--ink-soft);line-height:1.45;}
   /* ---- Monthly report (print / PDF export) ----
      Hidden in the normal app UI; only shown to the browser's print engine.
      Every rule is scoped under #report-print-root so it can never bleed
@@ -1231,6 +1235,56 @@ const Repo = {
     }
     return total;
   },
+  // Per-tenant lifetime totals for tenants currently in arrears — cumulative
+  // rent accrued since move-in vs. cumulative payments/adjustments, exposed
+  // separately (not just their difference) for the Rental Status screen's
+  // "Arrears breakdown by tenant" table. Mirrors tenantBalanceAsOf's accrual
+  // walk on purpose rather than refactoring it — that function is tested,
+  // load-bearing code, and the duplication here is small.
+  async arrearsBreakdownRows(mk){
+    const [tenants, properties] = await Promise.all([getAll("tenants"), this.allProperties()]);
+    const pById = Object.fromEntries(properties.map(p=>[p.id,p]));
+    const allTxns = await getAll("transactions");
+    const rows = [];
+    for (const t of tenants){
+      const startMk = monthKey(t.start_date);
+      if (mk < startMk) continue;
+      const accrualEnd = (t.last_accrual_month && t.last_accrual_month < mk) ? t.last_accrual_month : mk;
+      let totalRentOwed = 0, cursor = startMk;
+      while (cursor <= accrualEnd){ totalRentOwed += rentRateForMonth(t, cursor); cursor = addMonths(cursor, 1); }
+      const cutoffDate = mk + "-31";
+      let totalPaid = 0;
+      for (const x of allTxns){
+        if (x.tenant_id !== t.id || x.is_voided || txnEffectiveDate(x) > cutoffDate) continue;
+        if (x.type === "RENT_PAYMENT") totalPaid += (x.total_amount + x.repair_amount);
+        else if (x.type === "ADJUSTMENT") totalRentOwed += (x.adjustment_amount||0);
+      }
+      const balance = totalRentOwed - totalPaid;
+      if (balance > 0.004) rows.push({ tenant:t, property:pById[t.property_id], totalRentOwed, totalPaid, balance });
+    }
+    return rows.sort((a,b)=>a.tenant.name.localeCompare(b.tenant.name));
+  },
+  // Total arrears bucketed by roughly how many months of rent each balance
+  // represents (balance ÷ current monthly rate) — a practical stand-in for
+  // "months overdue" without walking each tenant's month-by-month history
+  // to find exactly when they first fell behind (this app is month-
+  // granular; there's no daily due-date to count days from).
+  async arrearsAgingBuckets(mk){
+    const rows = await this.arrearsBreakdownRows(mk);
+    const buckets = [
+      {label:"0–1 mo", test:m=>m<=1},
+      {label:"1–2 mo", test:m=>m>1&&m<=2},
+      {label:"2–3 mo", test:m=>m>2&&m<=3},
+      {label:"3+ mo", test:m=>m>3},
+    ];
+    for (const r of rows){
+      const rate = rentRateForMonth(r.tenant, mk);
+      r.monthsOverdue = rate > 0.004 ? r.balance / rate : 0;
+    }
+    return buckets
+      .map(b=>({label:b.label, value: rows.filter(r=>b.test(r.monthsOverdue)).reduce((s,r)=>s+r.balance,0)}))
+      .filter(b=>b.value>0.004);
+  },
   // A single tenant's collection status for one specific month. A payment
   // dated this month is applied oldest-debt-first: it settles whatever was
   // still owed from BEFORE this month started before any of it can count
@@ -1550,6 +1604,41 @@ function txTableHtml(rows){
     }).join("")}
   </table></div>`;
 }
+// The Rental Status screen's spreadsheet-style ledger — one row per tenant,
+// property/status/rate/balance all at a glance, built directly from
+// Repo.tenantStatusRows(mk) (the same rows the export reports use).
+function rentalStatusLedgerTableHtml(rows){
+  if (!rows.length) return `<div class="empty">${ic("table_chart")}<div class="big">No tenants yet</div></div>`;
+  return `
+  <div class="data-table-wrap"><table class="data-table">
+    <tr><th>Property</th><th>Tenant</th><th>Move-in</th><th class="num">Active rent</th><th class="num">Received this month</th><th>Status</th><th class="num">Balance</th></tr>
+    ${rows.map(r=>`<tr>
+      <td>${esc(r.property?r.property.name:"—")}</td>
+      <td>${esc(r.tenant.name)}</td>
+      <td>${esc(fmtDate(r.tenant.start_date))}</td>
+      <td class="num">${fmtMoney(r.due)}</td>
+      <td class="num">${fmtMoney(r.appliedToCurrentMonth)}</td>
+      <td><span class="chip ${r.status}">${r.status==="paid"?"Paid":r.status==="partial"?"Partial":"Due"}</span></td>
+      <td class="num"${r.balance>0.004?' style="color:var(--due);font-weight:700;"':''}>${fmtMoney(r.balance)}</td>
+    </tr>`).join("")}
+  </table></div>`;
+}
+// Per-tenant lifetime totals for tenants currently in arrears — how much
+// rent has accrued since move-in vs. how much has actually been paid.
+function arrearsBreakdownTableHtml(rows){
+  if (!rows.length) return `<div class="empty">${ic("celebration")}<div class="big">No arrears</div>Everyone's paid up.</div>`;
+  return `
+  <div class="data-table-wrap"><table class="data-table">
+    <tr><th>Tenant</th><th>Move-in</th><th class="num">Total rent owed</th><th class="num">Total paid</th><th class="num">Balance owed</th></tr>
+    ${rows.map(r=>`<tr>
+      <td>${esc(r.tenant.name)}<div class="sub">${esc(r.property?r.property.name:"")}</div></td>
+      <td>${esc(fmtDate(r.tenant.start_date))}</td>
+      <td class="num">${fmtMoney(r.totalRentOwed)}</td>
+      <td class="num">${fmtMoney(r.totalPaid)}</td>
+      <td class="num" style="color:var(--due);font-weight:700;">${fmtMoney(r.balance)}</td>
+    </tr>`).join("")}
+  </table></div>`;
+}
 Screens.dashboard = async function(){
   const [arrears, collected, recent, portfolio, trend, arrearsByProp, cashRows, monthlyStatuses, partners, defaulters] = await Promise.all([
     Repo.totalArrears(), Repo.totalCollectedThisMonth(), Repo.recentTransactions(6),
@@ -1585,6 +1674,14 @@ Screens.dashboard = async function(){
       <div class="stat">
         <div class="top-row"><div class="card-icon">${ic("apartment")}</div></div>
         <div class="label">Portfolio</div><div class="value">${portfolio.tenants} tenants · ${portfolio.properties} props</div>
+      </div>
+    </div>
+
+    <div class="list-card" style="margin-bottom:14px;">
+      <div class="list-row tap" onclick="goTab('rentalStatus')">
+        <div class="card-icon">${ic("table_chart")}</div>
+        <div class="lr-main"><div class="name">Rental Status Overview</div><div class="meta">Full ledger, arrears aging, and how the numbers are calculated</div></div>
+        <span class="msi chevron">chevron_right</span>
       </div>
     </div>
 
@@ -1670,6 +1767,76 @@ Screens.dashboard = async function(){
       <button class="icon-btn" onclick="openExportModal()" title="Export report">${ic("description")}</button>
     </div>`
   });
+};
+
+// ---------- Rental Status Overview ----------
+// A browsable "show your work" view — charts + a full spreadsheet-style
+// ledger, each section paired with an on-demand "how this is calculated"
+// note (see docs/CALCULATIONS.md). Reached via a link on the Dashboard,
+// not a permanent tab, same as Transaction History/Settlement/etc.
+Screens.rentalStatus = async function(){
+  const mk = monthKey();
+  const [statusRows, trend, arrears, collected, agingBuckets, arrearsRows] = await Promise.all([
+    Repo.tenantStatusRows(mk), Repo.monthlyCollections(6),
+    Repo.totalArrears(), Repo.totalCollectedThisMonth(),
+    Repo.arrearsAgingBuckets(mk), Repo.arrearsBreakdownRows(mk),
+  ]);
+  const paidCount = statusRows.filter(r=>r.status==="paid").length;
+  const partialCount = statusRows.filter(r=>r.status==="partial").length;
+  const dueCount = statusRows.filter(r=>r.status==="due").length;
+  const statusChartData = [
+    {label:"Paid", value:paidCount}, {label:"Partial", value:partialCount}, {label:"Due", value:dueCount}
+  ].filter(d=>d.value>0);
+
+  const html = `
+    <button class="back-btn" onclick="goTab('dashboard')">${ic("arrow_back")}Dashboard</button>
+
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="top-row"><div class="card-icon" style="background:var(--paid-bg);color:var(--paid);">${ic("payments")}</div></div>
+        <div class="label">Collected this month</div><div class="value num" style="color:var(--paid);">${fmtMoney(collected)}</div>
+      </div>
+      <div class="stat">
+        <div class="top-row"><div class="card-icon" style="background:var(--due-bg);color:var(--due);">${ic("account_balance_wallet")}</div></div>
+        <div class="label">Total arrears</div><div class="value num" style="color:var(--due);">${fmtMoney(arrears)}</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chead">
+        <div class="card-icon">${ic("donut_large")}</div>
+        <div><div class="chart-title">Tenants' paid status</div><div class="chart-sub">This month, across the whole portfolio</div></div>
+      </div>
+      ${statusChartData.length ? `<div class="chart-flex">${svgDonut(statusChartData, {centerLabel:String(paidCount+partialCount+dueCount)})}${chartLegend(statusChartData, {showPct:true})}</div>` : `<div class="chart-empty">No tenants yet</div>`}
+      <details class="info-toggle"><summary>${ic("info")}How this is calculated</summary><div class="info-note">Any payment settles the oldest unpaid month first. A tenant who pays exactly this month's rent while still owing from before still shows as Due, not Paid — that payment was needed to catch up on the past, not to cover the present.</div></details>
+    </div>
+
+    <div class="chart-card">
+      <div class="chead">
+        <div class="card-icon">${ic("trending_up")}</div>
+        <div><div class="chart-title">Collections trend</div><div class="chart-sub">Last 6 months, rent payments only</div></div>
+      </div>
+      ${trend.some(t=>t.value>0) ? svgBarChart(trend, {height:150}) : `<div class="chart-empty">No payments recorded yet</div>`}
+      <details class="info-toggle"><summary>${ic("info")}How this is calculated</summary><div class="info-note">Every rent payment dated within that calendar month, added up — independent of which month's rent the payment was actually meant to cover.</div></details>
+    </div>
+
+    <div class="chart-card">
+      <div class="chead">
+        <div class="card-icon">${ic("bar_chart")}</div>
+        <div><div class="chart-title">Arrears aging</div><div class="chart-sub">Roughly how many months of rent each balance represents</div></div>
+      </div>
+      ${agingBuckets.length ? svgBarChart(agingBuckets, {height:150, color:"#BA1A1A"}) : `<div class="chart-empty">No arrears right now</div>`}
+      <details class="info-toggle"><summary>${ic("info")}How this is calculated</summary><div class="info-note">Each tenant's outstanding balance divided by their current monthly rent — a practical stand-in for "how many months behind," since this app tracks rent by month rather than by exact due-date.</div></details>
+    </div>
+
+    <div class="section-title">${ic("table_chart")}Tenant payment ledger</div>
+    ${rentalStatusLedgerTableHtml(statusRows)}
+    <details class="info-toggle"><summary>${ic("info")}How this is calculated</summary><div class="info-note">Balance = every month's rent added up from move-in through today, minus every payment and adjustment recorded — recalculated fresh each time, not read from a single stored number.</div></details>
+
+    <div class="section-title">${ic("warning")}Arrears breakdown by tenant</div>
+    ${arrearsBreakdownTableHtml(arrearsRows)}
+  `;
+  Shell("Rental Status Overview", "Full ledger, arrears aging, and how the numbers are calculated", html);
 };
 
 // ---------- Transaction history ----------
