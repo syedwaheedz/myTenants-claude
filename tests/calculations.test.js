@@ -430,29 +430,29 @@ test("Transaction history: search and filters (status, type, receiver) narrow th
 
       await Screens.transactionHistory();
       await new Promise(r => setTimeout(r, 60));
-      const countAll = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+      const countAll = document.getElementById("tx-history-list").querySelectorAll("tr.tap").length;
 
       document.getElementById("tx-search").value = "Alice";
       await renderTxHistoryList();
-      const countSearch = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+      const countSearch = document.getElementById("tx-history-list").querySelectorAll("tr.tap").length;
       document.getElementById("tx-search").value = "";
 
       document.getElementById("tx-filter-status").value = "voided";
       await renderTxHistoryList();
-      const countVoided = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+      const countVoided = document.getElementById("tx-history-list").querySelectorAll("tr.tap").length;
       document.getElementById("tx-filter-status").value = "";
 
       document.getElementById("tx-filter-type").value = "ADJUSTMENT";
       await renderTxHistoryList();
-      const countAdj = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+      const countAdj = document.getElementById("tx-history-list").querySelectorAll("tr.tap").length;
       document.getElementById("tx-filter-type").value = "";
 
       document.getElementById("tx-filter-receiver").value = receiver.id;
       await renderTxHistoryList();
-      const countReceiver = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+      const countReceiver = document.getElementById("tx-history-list").querySelectorAll("tr.tap").length;
 
       await clearTxFilters();
-      const countCleared = document.getElementById("tx-history-list").querySelectorAll(".list-row").length;
+      const countCleared = document.getElementById("tx-history-list").querySelectorAll("tr.tap").length;
 
       return { countAll, countSearch, countVoided, countAdj, countReceiver, countCleared };
     });
@@ -656,6 +656,62 @@ test("computeSettlement leaves owner rent unattributed (not silently 0) when a p
     assert.equal(c.ownerRentUnattributed, 500, "nobody collected from this property, so its whole owner-rent total is unattributed, not defaulted to a partner");
     const alice = c.rows.find(r => r.partner_id === result.aliceId);
     assert.equal(alice.ownerRentResponsibility, 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("computeSettlement's ownerRentPayerOverride folds the reimbursement directly into the suggested transfer", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const mahbub = await Repo.addPartner({ name: "Mahbub", share_percent: 50 });
+      const waheed = await Repo.addPartner({ name: "Waheed", share_percent: 50 });
+      const rMahbub = await Repo.addReceiver({ name: "RMahbub", partner_id: mahbub.id });
+      // Mahbub's receiver collects the property's rent, but Waheed is the one
+      // who actually pays the owner (e.g. out of his own funds) instead.
+      const prop = await Repo.addProperty({ name: "KNR", owner_rent_amount: 15000 });
+      const tenant = await Repo.addTenant({ property_id: prop.id, name: "T", monthly_rent: 200000 });
+      await Repo.recordRentPayment({ tenant_id: tenant.id, total_amount: 125000, date: mk + "-05", splits: [{ receiver_id: rMahbub.id, amount: 125000 }] });
+
+      const withoutOverride = await Repo.computeSettlement(mk, mk, {});
+      const withOverride = await Repo.computeSettlement(mk, mk, { [prop.id]: waheed.id });
+      return { withoutOverride, withOverride, mahbubId: mahbub.id, waheedId: waheed.id };
+    });
+
+    // Baseline (no override): Mahbub is inferred responsible since his
+    // receiver collected it — matches today's shipped behavior exactly.
+    const baseMahbub = result.withoutOverride.rows.find(r => r.partner_id === result.mahbubId);
+    const baseWaheed = result.withoutOverride.rows.find(r => r.partner_id === result.waheedId);
+    assert.equal(baseMahbub.ownerRentResponsibility, 15000);
+    assert.equal(baseMahbub.availableAfterOwnerRent, 110000); // 125000 - 15000
+    assert.equal(baseWaheed.ownerRentResponsibility, 0);
+    // finalTotal = 125000-15000=110000, 50/50 share = 55000 each.
+    assert.equal(baseMahbub.entitled, 55000);
+    assert.equal(baseMahbub.net, 55000 - 110000); // -55000: debtor
+    assert.equal(baseWaheed.net, 55000 - 0); // +55000: creditor
+    assert.equal(result.withoutOverride.transfers.length, 1);
+    assert.equal(result.withoutOverride.transfers[0].amount, 55000, "the 15000 owner-rent portion is NOT suggested as a transfer today — implicitly assumed to go straight to the owner");
+
+    // With the override: Waheed actually paid the owner, so he's owed that
+    // 15000 back on top of the normal rebalancing — the suggested transfer
+    // must grow by exactly that amount (55000 -> 70000), not stay the same.
+    const ovMahbub = result.withOverride.rows.find(r => r.partner_id === result.mahbubId);
+    const ovWaheed = result.withOverride.rows.find(r => r.partner_id === result.waheedId);
+    assert.equal(ovMahbub.ownerRentResponsibility, 0, "the override moves responsibility off Mahbub entirely");
+    assert.equal(ovMahbub.availableAfterOwnerRent, 125000, "Mahbub never paid the owner, so his available cash is undiminished");
+    assert.equal(ovWaheed.ownerRentResponsibility, 15000);
+    assert.equal(ovWaheed.availableAfterOwnerRent, -15000, "Waheed collected nothing but is on the hook for 15000 — goes negative, not clamped");
+    assert.equal(ovMahbub.net, 55000 - 125000); // -70000
+    assert.equal(ovWaheed.net, 55000 - (-15000)); // +70000
+    assert.equal(result.withOverride.transfers.length, 1);
+    assert.equal(result.withOverride.transfers[0].from_partner_id, result.mahbubId);
+    assert.equal(result.withOverride.transfers[0].to_partner_id, result.waheedId);
+    assert.equal(result.withOverride.transfers[0].amount, 70000, "55000 normal rebalancing + 15000 owner-rent reimbursement, folded into one suggested transfer");
+
+    // ownerRentByProperty carries the override for display/audit purposes.
+    assert.equal(result.withOverride.ownerRentByProperty[0].overridePartnerId, result.waheedId);
+    assert.equal(result.withOverride.ownerRentByProperty[0].overridePartner.name, "Waheed");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

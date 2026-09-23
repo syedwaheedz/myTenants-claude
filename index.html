@@ -171,6 +171,19 @@
   .list-row .chevron{color:var(--ink-soft);flex-shrink:0;}
   .view-all-row{display:flex;align-items:center;justify-content:center;gap:4px;padding:11px;color:var(--accent);font-weight:600;font-size:13px;cursor:pointer;background:var(--surface);}
 
+  /* Compact "at a glance" data table — for in-app tabular summaries (settlement,
+     ledgers), distinct from the .r-* print-report tables under #report-print-root. */
+  .data-table-wrap{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow-1);margin-bottom:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .data-table{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap;}
+  .data-table th{text-align:left;color:var(--ink-soft);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.02em;padding:10px 10px;border-bottom:1px solid var(--line);}
+  .data-table td{padding:10px;border-bottom:1px solid var(--line);}
+  .data-table tr:last-child td{border-bottom:none;}
+  .data-table th.num, .data-table td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .data-table select{width:auto;min-width:0;font-size:12.5px;padding:6px 8px;margin:0;}
+  .data-table .sub{color:var(--ink-soft);font-size:11px;font-weight:400;text-transform:none;}
+  .data-table tr.tap{cursor:pointer;}
+  .data-table tr.tap:active{opacity:.7;}
+
   .chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:12.5px;font-weight:600;white-space:nowrap;}
   .chip.paid{background:var(--paid-bg);color:var(--paid);}
   .chip.due{background:var(--due-bg);color:var(--due);}
@@ -906,7 +919,13 @@ const Repo = {
   // in one combined pass. Only ever touches *unsettled* splits, so a
   // range that overlaps an already-settled month just contributes zero
   // for that month rather than double-settling it.
-  async computeSettlement(fromPeriod, toPeriod = fromPeriod){
+  // ownerRentPayerOverrides: {[propertyId]: partnerId} — lets the person say
+  // "this partner actually paid the owner for this property", when that
+  // differs from whoever's receiver collected the tenant's rent (e.g. one
+  // partner fronts the owner payment from personal funds instead of the
+  // partner who happened to collect). Defaults to the collection-based
+  // inference for any property without an explicit override.
+  async computeSettlement(fromPeriod, toPeriod = fromPeriod, ownerRentPayerOverrides = {}){
     const [receivers, splits, txns, properties, partners] = await Promise.all([
       this.allReceivers(), getAll("transaction_splits"), getAll("transactions"), this.allProperties(), this.allPartners()
     ]);
@@ -961,22 +980,28 @@ const Repo = {
           (collectedByMap[key] ||= {receiver:r||null, partner: r && r.partner_id ? partnerById[r.partner_id]||null : null, amount:0}).amount += s.amount;
         }
         const collectedBy = Object.values(collectedByMap).sort((a,b)=>b.amount-a.amount);
-        return { property:p, monthlyRate:Number(p.owner_rent_amount)||0, months:monthsInRange, total:(Number(p.owner_rent_amount)||0)*monthsInRange, collectedBy };
+        const overridePartnerId = ownerRentPayerOverrides[p.id] || null;
+        const overridePartner = overridePartnerId ? (partnerById[overridePartnerId]||null) : null;
+        return { property:p, monthlyRate:Number(p.owner_rent_amount)||0, months:monthsInRange, total:(Number(p.owner_rent_amount)||0)*monthsInRange, collectedBy, overridePartnerId, overridePartner };
       })
       .sort((a,b)=>b.total-a.total);
 
     // Roll ownerRentByProperty's per-property "who collected it" up to a
     // per-partner "how much of the total owner-rent deduction is effectively
     // their responsibility to pay out of what they personally collected".
-    // Allocated proportional to each partner's share of THAT property's
-    // collections this period (not an equal split) — it's a direct extension
-    // of collectedBy, which already expresses exactly that. A property with
-    // zero collections this period has nobody currently holding cash to pay
-    // its owner from, so its whole total goes to ownerRentUnattributed
-    // instead of being silently attributed to no one (i.e. shown as 0).
+    // When an explicit override says a different partner actually paid the
+    // owner, that partner takes on the property's whole total instead of the
+    // collection-based proportional split. A property with zero collections
+    // and no override has nobody currently holding cash to pay its owner
+    // from, so its whole total goes to ownerRentUnattributed instead of
+    // being silently attributed to no one (i.e. shown as 0).
     const ownerRentResponsibilityByPartner = {};
     let ownerRentUnattributed = 0;
     for (const o of ownerRentByProperty){
+      if (o.overridePartnerId){
+        ownerRentResponsibilityByPartner[o.overridePartnerId] = (ownerRentResponsibilityByPartner[o.overridePartnerId]||0) + o.total;
+        continue;
+      }
       const collectedTotal = o.collectedBy.reduce((s,c)=>s+c.amount, 0);
       if (collectedTotal <= 0.004){ ownerRentUnattributed += o.total; continue; }
       for (const c of o.collectedBy){
@@ -1000,16 +1025,28 @@ const Repo = {
       const opening = Number(p.running_balance)||0;
       const collected = byPartner[p.id].collected;
       const entitled = share + opening;
-      // net > 0: this partner holds less cash than they're entitled to — owed to them.
-      // net < 0: this partner is holding more than their share — they owe the excess out.
-      const net = entitled - collected;
       // How much of the owner-rent deduction is on this partner to pay out of
-      // what they collected, and what's left over after doing so. Purely
-      // explanatory — net/transfers above are already correct without this;
-      // see the comment above ownerRentResponsibilityByPartner. Can go
-      // negative (their own collections didn't cover it) — not clamped.
+      // what they collected, and what's left over after doing so. Can go
+      // negative (their own collections didn't cover it, or an override says
+      // they paid the owner from money they never personally collected) —
+      // not clamped.
       const ownerRentResponsibility = ownerRentResponsibilityByPartner[p.id] || 0;
       const availableAfterOwnerRent = collected - ownerRentResponsibility;
+      // net > 0: owed to them. net < 0: they owe the excess out. Uses
+      // availableAfterOwnerRent (not raw collected) so that when someone
+      // other than the collector actually paid the owner, the reimbursement
+      // is automatically folded into the suggested transfer below — e.g. if
+      // Partner B pays the owner instead of Partner A (who collected the
+      // tenant's rent), B's net correctly increases by that amount and A's
+      // suggested transfer to B grows to cover it, rather than requiring a
+      // separate manual adjustment. With no override, this is mathematically
+      // identical to entitled - collected for every partner who isn't on the
+      // hook for any owner rent, and for the collector(s) it now fully
+      // resolves what used to be left as an unexplained gap (previously,
+      // the owner-rent portion of their debt never appeared in any suggested
+      // transfer at all — implicitly assumed to just go to the actual
+      // property owner outside the app).
+      const net = entitled - availableAfterOwnerRent;
       return { partner_id:p.id, name:p.name, share_percent:p.share_percent, collected, share, opening_balance:opening, entitled, net, split_ids: byPartner[p.id].splitIds, ownerRentResponsibility, availableAfterOwnerRent };
     });
 
@@ -1451,6 +1488,32 @@ function txRowHtml(x){
     </div>`;
 }
 function txAmountAbs(x){ return Math.abs(x.type==="ADJUSTMENT" ? (x.adjustment_amount||0) : (x.total_amount||0)); }
+// The full ledger table for Transaction history — date, tenant, amount,
+// received by, which month it's for, and status, all in one glanceable row.
+// (Dashboard's short "Recent activity" preview keeps the card-row txRowHtml
+// above — a handful of items reads fine as cards; a filterable full history
+// is exactly the "rent roll / ledger" shape a rental app is expected to have.)
+function txTableHtml(rows){
+  return `
+  <div class="data-table-wrap"><table class="data-table">
+    <tr><th>Date</th><th>Tenant</th><th>For month</th><th class="num">Amount</th><th>Received by</th><th>Status</th></tr>
+    ${rows.map(x=>{
+      const isAdj = x.type === "ADJUSTMENT";
+      const amt = isAdj ? (x.adjustment_amount||0) : x.total_amount;
+      const forMonthLabel = isAdj ? "—" : fmtMonth(x.for_month || monthKey(x.date));
+      const receivedByLabel = x.receivedByNames && x.receivedByNames.length ? esc(x.receivedByNames.join(", ")) : "—";
+      const statusChip = x.is_voided ? `<span class="chip due">Voided</span>` : (x.isSettled ? `<span class="chip paid">Settled</span>` : `<span class="chip neutral">Unsettled</span>`);
+      return `<tr class="tap" onclick="openTxnDetail('${x.id}')">
+        <td>${fmtDate(x.date)}</td>
+        <td>${esc(x.tenant?x.tenant.name:"—")}<div class="sub">${isAdj?"Adjustment":"Payment"}${x.property?" · "+esc(x.property.name):""}</div></td>
+        <td>${forMonthLabel}</td>
+        <td class="num" style="color:${isAdj && amt<0 ? 'var(--paid)' : 'inherit'};">${amt<0&&isAdj?"−":""}${fmtMoney(Math.abs(amt))}</td>
+        <td>${receivedByLabel}</td>
+        <td>${statusChip}</td>
+      </tr>`;
+    }).join("")}
+  </table></div>`;
+}
 Screens.dashboard = async function(){
   const [arrears, collected, recent, portfolio, trend, arrearsByProp, cashRows, monthlyStatuses, partners, defaulters] = await Promise.all([
     Repo.totalArrears(), Repo.totalCollectedThisMonth(), Repo.recentTransactions(6),
@@ -1670,7 +1733,7 @@ async function renderTxHistoryList(){
 
   container.innerHTML = rows.length ? `
     <div class="meta" style="margin-bottom:8px;">${rows.length} transaction${rows.length===1?"":"s"}</div>
-    <div class="list-card">${rows.map(txRowHtml).join("")}</div>
+    ${txTableHtml(rows)}
   ` : `<div class="empty">${ic("search_off")}<div class="big">No matching transactions</div>Try adjusting your search or filters.</div>`;
 }
 
@@ -1946,14 +2009,15 @@ Screens.transferHistory = async function(){
 Screens.settlement = async function(){
   const fromPeriod = State.settlementFromPeriod || monthKey();
   const toPeriod = State.settlementToPeriod || monthKey();
-  const computed = (toPeriod < fromPeriod) ? null : await Repo.computeSettlement(fromPeriod, toPeriod);
+  const overrides = State.settlementOwnerRentOverrides || {};
+  const computed = (toPeriod < fromPeriod) ? null : await Repo.computeSettlement(fromPeriod, toPeriod, overrides);
   State._lastSettlement = computed;
   const html = `
     <button class="back-btn" onclick="goTab('cash')">${ic("arrow_back")}Cash in hand</button>
     <label>From</label>
-    <input type="month" value="${fromPeriod}" onchange="State.settlementFromPeriod=this.value; render();">
+    <input type="month" value="${fromPeriod}" onchange="State.settlementFromPeriod=this.value; State.settlementOwnerRentOverrides={}; render();">
     <label>To</label>
-    <input type="month" value="${toPeriod}" onchange="State.settlementToPeriod=this.value; render();">
+    <input type="month" value="${toPeriod}" onchange="State.settlementToPeriod=this.value; State.settlementOwnerRentOverrides={}; render();">
     <div class="meta" style="margin-top:4px;">Pick the same month twice to settle just one month, or widen the range to catch up on several unsettled months in one pass — only unsettled cash is ever touched, so it's safe even if part of the range was already settled.</div>
     ${!computed ? `<div class="warn-box" style="margin-top:10px;">${ic("warning")}"To" must be on or after "From".</div>` : `
     <div class="divider"></div>
@@ -1963,58 +2027,44 @@ Screens.settlement = async function(){
     <div class="row"><span style="font-weight:700;">= Final total</span><span class="num" style="font-weight:700;">${fmtMoney(computed.finalTotal)}</span></div>
     ${computed.unassigned > 0.004 ? `<div class="warn-box" style="margin-top:10px;">${ic("warning")}${fmtMoney(computed.unassigned)} was collected by a receiver with no partner linked, so it's left out of everyone's share below — link that receiver to a partner in Manage Partners.</div>` : ""}
 
-    <div class="section-title">${ic("payments")}Where the cash came from — by property</div>
-    <div class="card">
-      ${computed.byProperty.length ? computed.byProperty.map(b=>`
-        <div class="row"><span class="meta">${esc(b.property?b.property.name:"Unknown property")}</span><span class="num">${fmtMoney(b.collected)}</span></div>
-      `).join("") : `<div class="meta">Nothing collected in this range.</div>`}
-    </div>
-
-    ${computed.byMonth.length > 1 ? `
-    <div class="section-title">${ic("calendar_month")}By month</div>
-    <div class="card">
-      ${computed.byMonth.map(b=>`<div class="row"><span class="meta">${esc(fmtMonth(b.mk))}</span><span class="num">${fmtMoney(b.collected)}</span></div>`).join("")}
-    </div>` : ""}
-
-    <div class="section-title">${ic("person_pin")}By receiver</div>
-    <div class="card">
-      ${computed.byReceiver.length ? computed.byReceiver.map(b=>`
-        <div class="row"><span class="meta">${esc(b.receiver?b.receiver.name:"Unknown receiver")}${b.partner?" → "+esc(b.partner.name)+"'s pool":""}</span><span class="num">${fmtMoney(b.collected)}</span></div>
-      `).join("") : `<div class="meta">Nothing collected in this range.</div>`}
-    </div>
-
     ${computed.ownerRentByProperty.length ? `
-    <div class="section-title">${ic("remove_circle")}Deductions — owner rent</div>
-    <div class="card">
-      ${computed.ownerRentByProperty.map(o=>`
-        <div class="row"><span class="meta">${esc(o.property.name)} (${fmtMoney(o.monthlyRate)}/mo × ${o.months} month${o.months===1?"":"s"})</span><span class="num">${fmtMoney(o.total)}</span></div>
-        <div class="meta" style="margin:2px 0 10px 0;">${o.collectedBy.length ? `Collected by: ${o.collectedBy.map(c=>`${esc(c.receiver?c.receiver.name:"Unknown receiver")}${c.partner?` (${esc(c.partner.name)}'s pool)`:""} — ${fmtMoney(c.amount)}`).join(", ")}` : `Nothing collected for this property in this range yet — the owner's ${fmtMoney(o.total)} still needs to come from somewhere.`}</div>
-      `).join("")}
-    </div>` : ""}
-
-    ${computed.rows.length ? `
-    <div class="section-title">${ic("calculate")}Reconciliation — after owner rent</div>
-    ${computed.rows.map(r=>`
-      <div class="card">
-        <div class="row"><div class="name">${esc(r.name)}</div><span class="chip neutral">${r.share_percent}% share</span></div>
-        <div class="row"><span class="meta">Their share of final total</span><span class="num">${fmtMoney(r.share)}</span></div>
-        <div class="row"><span class="meta">Amount available (collected)</span><span class="num">${fmtMoney(r.collected)}</span></div>
-        ${r.ownerRentResponsibility>0.004 ? `<div class="row"><span class="meta">− Owner rent paid from this</span><span class="num">${fmtMoney(r.ownerRentResponsibility)}</span></div>` : ""}
-        <div class="row"><span style="font-weight:700;">= Available after owner rent</span><span class="num" style="font-weight:700;color:${r.availableAfterOwnerRent<0?'var(--due)':'inherit'};">${fmtMoney(r.availableAfterOwnerRent)}</span></div>
-      </div>`).join("")}
-    ${computed.ownerRentUnattributed>0.004 ? `<div class="warn-box" style="margin-top:10px;">${ic("warning")}${fmtMoney(computed.ownerRentUnattributed)} of owner rent isn't attributable to any partner yet — see the owner rent section above for which property nobody's collected from this period, so no one is currently holding that cash to pay the owner from.</div>` : ""}
+    <div class="section-title">${ic("remove_circle")}Owner rent</div>
+    <div class="data-table-wrap"><table class="data-table">
+      <tr><th>Property</th><th class="num">Amount</th><th>Paid by</th></tr>
+      ${computed.ownerRentByProperty.map(o=>{
+        const inferredLabel = o.collectedBy.length ? o.collectedBy.map(c=>c.partner?c.partner.name:(c.receiver?c.receiver.name:"Unknown")).join(", ") : "nobody yet";
+        return `
+        <tr>
+          <td>${esc(o.property.name)}<div class="sub">${fmtMoney(o.monthlyRate)}/mo × ${o.months}</div></td>
+          <td class="num">${fmtMoney(o.total)}</td>
+          <td><select onchange="setOwnerRentPayerOverride('${o.property.id}', this.value)">
+            <option value="">Default (${esc(inferredLabel)})</option>
+            ${computed.rows.map(r=>`<option value="${r.partner_id}" ${o.overridePartnerId===r.partner_id?"selected":""}>${esc(r.name)}</option>`).join("")}
+          </select></td>
+        </tr>`;
+      }).join("")}
+    </table></div>
+    ${computed.ownerRentUnattributed>0.004 ? `<div class="warn-box" style="margin-top:6px;">${ic("warning")}${fmtMoney(computed.ownerRentUnattributed)} of owner rent isn't attributable to any partner yet — nobody's collected from that property this period, and nobody's marked as having paid it.</div>` : ""}
     ` : ""}
 
-    <div class="section-title">${ic("groups")}Who's actually holding the cash</div>
-    ${computed.rows.length ? computed.rows.map(r=>`
-      <div class="card">
-        <div class="row"><div class="name">${esc(r.name)}</div><span class="chip neutral">${r.share_percent}% share</span></div>
-        <div class="row"><span class="meta">Collected via their receivers</span><span class="num">${fmtMoney(r.collected)}</span></div>
-        <div class="row"><span class="meta">Share of this period's pool</span><span class="num">${fmtMoney(r.share)}</span></div>
-        ${Math.abs(r.opening_balance)>0.004 ? `<div class="row"><span class="meta">${r.opening_balance>=0?"+ Carried forward (owed to them from before)":"− Carried forward (they still owe from before)"}</span><span class="num">${fmtMoney(Math.abs(r.opening_balance))}</span></div>` : ""}
-        <div class="row"><span class="meta">= Entitled to</span><span class="num">${fmtMoney(r.entitled)}</span></div>
-        <div class="row"><span style="font-weight:700;">${Math.abs(r.net)<0.005 ? "Already even" : r.net>0 ? "Owed to them" : "Holding extra — owes this out"}</span><span class="num" style="font-weight:700;color:${r.net>=0?'var(--paid)':'var(--due)'};">${fmtMoney(Math.abs(r.net))}</span></div>
-      </div>`).join("") : `<div class="empty">Add partners first (see the Partners tab).</div>`}
+    <div class="section-title">${ic("groups")}Partner summary</div>
+    ${computed.rows.length ? `
+    <div class="data-table-wrap"><table class="data-table">
+      <tr><th>Partner</th><th class="num">Net</th><th class="num">Collected</th><th class="num">Owner rent</th><th class="num">Available</th><th class="num">Entitled</th></tr>
+      ${computed.rows.map(r=>{
+        const netLabel = Math.abs(r.net)<0.005 ? `<span class="sub">Even</span>`
+          : r.net>0 ? `<span style="color:var(--paid);font-weight:700;">+${fmtMoney(r.net)}</span>`
+          : `<span style="color:var(--due);font-weight:700;">−${fmtMoney(Math.abs(r.net))}</span>`;
+        return `<tr>
+          <td>${esc(r.name)}<div class="sub">${r.share_percent}%${Math.abs(r.opening_balance)>0.004?` · carried ${r.opening_balance>=0?'+':'−'}${fmtMoney(Math.abs(r.opening_balance))}`:''}</div></td>
+          <td class="num">${netLabel}</td>
+          <td class="num">${fmtMoney(r.collected)}</td>
+          <td class="num">${r.ownerRentResponsibility>0.004?fmtMoney(r.ownerRentResponsibility):"—"}</td>
+          <td class="num">${fmtMoney(r.availableAfterOwnerRent)}</td>
+          <td class="num">${fmtMoney(r.entitled)}</td>
+        </tr>`;
+      }).join("")}
+    </table></div>` : `<div class="empty">Add partners first (see the Partners tab).</div>`}
 
     ${computed.transfers.length ? `
       <div class="section-title">${ic("swap_horiz")}Suggested transfers to even it out</div>
@@ -2038,6 +2088,12 @@ Screens.settlement = async function(){
   Shell("Settlement", fmtPeriodRange(fromPeriod, toPeriod), html);
   if (computed) computed.transfers.forEach((t,idx) => refreshTransferNote(idx));
 };
+function setOwnerRentPayerOverride(propertyId, partnerId){
+  State.settlementOwnerRentOverrides = State.settlementOwnerRentOverrides || {};
+  if (partnerId) State.settlementOwnerRentOverrides[propertyId] = partnerId;
+  else delete State.settlementOwnerRentOverrides[propertyId];
+  render();
+}
 function toggleTransferPaid(idx){
   const checkbox = document.getElementById("transfer-paid-"+idx);
   const wrap = document.getElementById("transfer-amount-wrap-"+idx);
@@ -2109,33 +2165,33 @@ function buildSettlementReportHtml(computed){
 
   const ownerRentTable = computed.ownerRentByProperty.length ? `
     <table>
-      <tr><th>Property</th><th class="r-num">Monthly rate</th><th class="r-num">Months</th><th class="r-num">Total deducted</th><th>Collected by</th></tr>
+      <tr><th>Property</th><th class="r-num">Monthly rate</th><th class="r-num">Months</th><th class="r-num">Total deducted</th><th>Paid by</th></tr>
       ${computed.ownerRentByProperty.map(o=>{
-        const collectedByLabel = o.collectedBy.length
-          ? o.collectedBy.map(c=>`${esc(c.receiver?c.receiver.name:"Unknown")}${c.partner?` (${esc(c.partner.name)})`:""}: ${fmtMoney(c.amount)}`).join("<br>")
-          : `<span style="color:#BA1A1A;">Nothing collected yet</span>`;
-        return `<tr><td>${esc(o.property.name)}</td><td class="r-num">${fmtMoney(o.monthlyRate)}</td><td class="r-num">${o.months}</td><td class="r-num">${fmtMoney(o.total)}</td><td>${collectedByLabel}</td></tr>`;
+        const paidByLabel = o.overridePartner
+          ? `${esc(o.overridePartner.name)} <span style="color:#8a8d85;">(manually assigned)</span>`
+          : o.collectedBy.length
+            ? o.collectedBy.map(c=>`${esc(c.receiver?c.receiver.name:"Unknown")}${c.partner?` (${esc(c.partner.name)})`:""}: ${fmtMoney(c.amount)}`).join("<br>")
+            : `<span style="color:#BA1A1A;">Nothing collected yet</span>`;
+        return `<tr><td>${esc(o.property.name)}</td><td class="r-num">${fmtMoney(o.monthlyRate)}</td><td class="r-num">${o.months}</td><td class="r-num">${fmtMoney(o.total)}</td><td>${paidByLabel}</td></tr>`;
       }).join("")}
       <tr class="r-row-total"><td colspan="3">Total owner rent deducted</td><td class="r-num">${fmtMoney(computed.ownerRentTotal)}</td><td></td></tr>
     </table>` : `<div class="r-empty">No owner-rent deduction for this range.</div>`;
 
-  const reconciliationCallout = computed.ownerRentUnattributed>0.004
+  const partnerCallout = computed.ownerRentUnattributed>0.004
     ? `<div class="r-callout">${fmtMoney(computed.ownerRentUnattributed)} of owner rent isn't attributable to any partner yet — see the owner rent table above for which property nobody's collected from this period.</div>` : "";
-  const reconciliationTable = computed.rows.length ? `
-    ${reconciliationCallout}
-    <table>
-      <tr><th>Partner</th><th class="r-num">Share %</th><th class="r-num">Share ₹</th><th class="r-num">Collected</th><th class="r-num">Owner rent responsibility</th><th class="r-num">Available after owner rent</th></tr>
-      ${computed.rows.map(r=>`<tr><td>${esc(r.name)}</td><td class="r-num">${r.share_percent}%</td><td class="r-num">${fmtMoney(r.share)}</td><td class="r-num">${fmtMoney(r.collected)}</td><td class="r-num">${fmtMoney(r.ownerRentResponsibility)}</td><td class="r-num">${fmtMoney(r.availableAfterOwnerRent)}</td></tr>`).join("")}
-    </table>` : `<div class="r-empty">Add partners first.</div>`;
-
+  // One consolidated per-partner table — share, collected, owner rent
+  // responsibility, what's left after it, opening balance carried forward,
+  // and the resulting net position — instead of two separate, overlapping
+  // tables that used to repeat Partner/Share/Collected in both.
   const partnerTable = computed.rows.length ? `
+    ${partnerCallout}
     <table>
-      <tr><th>Partner</th><th class="r-num">Share</th><th class="r-num">Collected</th><th class="r-num">Opening balance</th><th class="r-num">Entitled</th><th class="r-num">Net position</th></tr>
+      <tr><th>Partner</th><th class="r-num">Share %</th><th class="r-num">Collected</th><th class="r-num">Owner rent</th><th class="r-num">Available</th><th class="r-num">Opening bal.</th><th class="r-num">Entitled</th><th class="r-num">Net</th></tr>
       ${computed.rows.map(r=>{
-        const netLabel = Math.abs(r.net)<0.005 ? `<span style="color:#6B6A64;">Already even</span>`
-          : r.net>0 ? `<span style="color:#1E6E3C;font-weight:700;">Owed ${fmtMoney(r.net)}</span>`
-          : `<span style="color:#BA1A1A;font-weight:700;">Owes ${fmtMoney(Math.abs(r.net))}</span>`;
-        return `<tr><td>${esc(r.name)}</td><td class="r-num">${r.share_percent}%</td><td class="r-num">${fmtMoney(r.collected)}</td><td class="r-num">${fmtMoney(r.opening_balance)}</td><td class="r-num">${fmtMoney(r.entitled)}</td><td class="r-num">${netLabel}</td></tr>`;
+        const netLabel = Math.abs(r.net)<0.005 ? `<span style="color:#6B6A64;">Even</span>`
+          : r.net>0 ? `<span style="color:#1E6E3C;font-weight:700;">+${fmtMoney(r.net)}</span>`
+          : `<span style="color:#BA1A1A;font-weight:700;">−${fmtMoney(Math.abs(r.net))}</span>`;
+        return `<tr><td>${esc(r.name)}</td><td class="r-num">${r.share_percent}%</td><td class="r-num">${fmtMoney(r.collected)}</td><td class="r-num">${r.ownerRentResponsibility>0.004?fmtMoney(r.ownerRentResponsibility):"—"}</td><td class="r-num">${fmtMoney(r.availableAfterOwnerRent)}</td><td class="r-num">${fmtMoney(r.opening_balance)}</td><td class="r-num">${fmtMoney(r.entitled)}</td><td class="r-num">${netLabel}</td></tr>`;
       }).join("")}
     </table>` : `<div class="r-empty">Add partners first.</div>`;
 
@@ -2168,10 +2224,7 @@ function buildSettlementReportHtml(computed){
       <div class="r-section-title">Deductions — owner rent</div>
       ${ownerRentTable}
 
-      <div class="r-section-title">Reconciliation — after owner rent</div>
-      ${reconciliationTable}
-
-      <div class="r-section-title">Partner breakdown</div>
+      <div class="r-section-title">Partner summary</div>
       ${partnerTable}
 
       <div class="r-section-title">Suggested transfers</div>
