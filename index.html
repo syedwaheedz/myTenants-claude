@@ -1330,6 +1330,19 @@ const Repo = {
   async recentTransactions(limit=8){
     return (await this.allTransactionsDetailed()).slice(0,limit);
   },
+  // Every rent payment physically received within a date range, oldest
+  // first — for the "Payments received" table in exports, so each row can
+  // be checked off against a manual ledger or a physical receipt. Date-based
+  // (the day cash changed hands), not for_month-based (which month's rent
+  // it's earmarked for) — a receipt is issued the day money is received,
+  // regardless of which month's rent it covers.
+  async paymentsReceivedInRange(fromPeriod, toPeriod){
+    const all = await this.allTransactionsDetailed();
+    return all
+      .filter(x => x.type === "RENT_PAYMENT" && !x.is_voided)
+      .filter(x => { const mk = monthKey(x.date); return mk >= fromPeriod && mk <= toPeriod; })
+      .sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  },
   async allTenantsWithProperty(){
     const [tenants, properties] = await Promise.all([getAll("tenants"), this.allProperties()]);
     const pById = Object.fromEntries(properties.map(p=>[p.id,p]));
@@ -2128,13 +2141,28 @@ async function submitSettlement(){
   toast(unpaidCount ? `Settlement recorded — ${unpaidCount} transfer${unpaidCount===1?"":"s"} still owed` : "Settlement recorded — all transfers paid");
   goTab("cash");
 }
+// One row per rent payment received — date, tenant, property, amount, and
+// who received it — so every row can be checked off against a manual
+// ledger or a physical receipt. Shared by the Monthly Report and the
+// Settlement Summary, which both need exactly this for the same reason.
+function paymentsReceivedTableHtml(rows){
+  if (!rows.length) return `<div class="r-empty">No payments recorded in this range.</div>`;
+  const total = rows.reduce((s,x)=>s+(x.total_amount||0), 0);
+  return `
+    <table>
+      <tr><th>Date</th><th>Tenant</th><th>Property</th><th class="r-num">Amount</th><th>Received by</th></tr>
+      ${rows.map(x=>`<tr><td>${esc(fmtDate(x.date))}</td><td>${esc(x.tenant?x.tenant.name:"—")}</td><td>${esc(x.property?x.property.name:"—")}</td><td class="r-num">${fmtMoney(x.total_amount)}</td><td>${esc((x.receivedByNames||[]).join(", ")||"—")}</td></tr>`).join("")}
+      <tr class="r-row-total"><td colspan="3">Total</td><td class="r-num">${fmtMoney(total)}</td><td></td></tr>
+    </table>`;
+}
 // A detailed, printable breakdown of a settlement computation — reuses the
 // same #report-print-root + print CSS the Monthly Report already uses, so
 // it needs no new DOM/CSS. Exports whatever's currently previewed on the
 // Settlement screen (State._lastSettlement), whether or not it's been
 // recorded yet — this is meant to be reviewed/shared *before* finalizing.
-function buildSettlementReportHtml(computed){
+function buildSettlementReportHtml(computed, paymentsReceived){
   const generatedDate = fmtDate(todayISO());
+  const paymentsTable = paymentsReceivedTableHtml(paymentsReceived||[]);
   const periodLabel = fmtPeriodRange(computed.fromPeriod, computed.toPeriod);
   const rHeader = `
     <div class="r-header">
@@ -2214,6 +2242,10 @@ function buildSettlementReportHtml(computed){
       </div>
       ${computed.unassigned>0.004 ? `<div class="r-callout">${fmtMoney(computed.unassigned)} was collected by a receiver with no partner linked, and is left out of everyone's share below.</div>` : ""}
 
+      <div class="r-section-title">Payments received this period</div>
+      <div class="r-note">Every rent payment received — for tallying against manual entries or payment receipts.</div>
+      ${paymentsTable}
+
       <div class="r-section-title">Where the cash came from — by property</div>
       ${byPropertyTable}
       ${byMonthSection}
@@ -2236,7 +2268,8 @@ function buildSettlementReportHtml(computed){
 async function exportSettlementReportPdf(){
   const computed = State._lastSettlement;
   if (!computed) return;
-  document.getElementById("report-print-root").innerHTML = buildSettlementReportHtml(computed);
+  const paymentsReceived = await Repo.paymentsReceivedInRange(computed.fromPeriod, computed.toPeriod);
+  document.getElementById("report-print-root").innerHTML = buildSettlementReportHtml(computed, paymentsReceived);
   setTimeout(() => {
     const jobName = computed.fromPeriod===computed.toPeriod ? `myTenants-settlement-${computed.fromPeriod}` : `myTenants-settlement-${computed.fromPeriod}_to_${computed.toPeriod}`;
     // Android's WebView never implements window.print() (silent no-op) —
@@ -3052,10 +3085,10 @@ function openMonthlyReportModal(){
   `;
 }
 async function buildMonthlyReportData(mk){
-  const [collected, cashRows, monthlyStatuses, portfolio, trend, defaulters, partnerSettlement, transfersAll] = await Promise.all([
+  const [collected, cashRows, monthlyStatuses, portfolio, trend, defaulters, partnerSettlement, transfersAll, paymentsReceived] = await Promise.all([
     Repo.totalCollectedForMonth(mk), Repo.cashInHandByReceiver(), Repo.monthlyStatusForAllTenants(mk),
     Repo.portfolioTotals(), Repo.monthlyCollections(6, mk), Repo.defaultersAsOf(mk),
-    Repo.reportPartnerSettlementSummary(mk), Repo.transferHistory()
+    Repo.reportPartnerSettlementSummary(mk), Repo.transferHistory(), Repo.paymentsReceivedInRange(mk, mk)
   ]);
   const outstandingTotal = defaulters.reduce((s,t)=>s+t.current_balance,0);
   const cashTotal = cashRows.reduce((s,r)=>s+r.amount,0);
@@ -3081,7 +3114,7 @@ async function buildMonthlyReportData(mk){
 
   const transfersThisPeriod = transfersAll.filter(t=>t.period===mk);
 
-  return { mk, collected, outstandingTotal, cashTotal, cashRows, paidCount, partialCount, dueCount, portfolio, trend, defaulters, outstandingByProperty, propertyDetail, partnerSettlement, transfersThisPeriod };
+  return { mk, collected, outstandingTotal, cashTotal, cashRows, paidCount, partialCount, dueCount, portfolio, trend, defaulters, outstandingByProperty, propertyDetail, partnerSettlement, transfersThisPeriod, paymentsReceived };
 }
 function buildMonthlyReportHtml(data, showPeriodInFooter){
   const generatedDate = fmtDate(todayISO());
@@ -3134,7 +3167,16 @@ function buildMonthlyReportHtml(data, showPeriodInFooter){
           </table>
         </div>
       </div>
-      ${rFooter(1,3)}
+      ${rFooter(1,4)}
+    </div>`;
+
+  const page2 = `
+    <div class="r-page">
+      ${rHeader}
+      <div class="r-section-title">Payments received this month</div>
+      <div class="r-note">Every rent payment received — for tallying against manual entries or payment receipts.</div>
+      ${paymentsReceivedTableHtml(data.paymentsReceived||[])}
+      ${rFooter(2,4)}
     </div>`;
 
   const defaultersTable = data.defaulters.length ? `
@@ -3157,13 +3199,13 @@ function buildMonthlyReportHtml(data, showPeriodInFooter){
         </tr>`).join("")}
     </table>`).join("") : `<div class="r-empty">No properties with tenants yet.</div>`;
 
-  const page2 = `
+  const page3 = `
     <div class="r-page">
       ${rHeader}
       <div class="r-section-title">Defaulter list</div>
       ${defaultersTable}
       ${propertySections}
-      ${rFooter(2,3)}
+      ${rFooter(3,4)}
     </div>`;
 
   const cashTable = data.cashRows.length ? `
@@ -3195,7 +3237,7 @@ function buildMonthlyReportHtml(data, showPeriodInFooter){
     ${data.transfersThisPeriod.some(t=>t.remaining_amount>0.004) ? `<div class="r-callout">${data.transfersThisPeriod.filter(t=>t.remaining_amount>0.004).map(t=>`${fmtMoney(t.remaining_amount)} still owed from ${esc(t.from_name)} to ${esc(t.to_name)}`).join("; ")} — carried forward.</div>` : ""}
   ` : `<div class="r-empty">No settlement has been recorded for ${esc(periodLabel)} yet.</div>`;
 
-  const page3 = `
+  const page4 = `
     <div class="r-page">
       ${rHeader}
       <div class="r-section-title">Cash in hand — by receiver</div>
@@ -3204,10 +3246,10 @@ function buildMonthlyReportHtml(data, showPeriodInFooter){
       ${settlementTable}
       <div class="r-section-title">Recorded transfers this period</div>
       ${transfersTable}
-      ${rFooter(3,3)}
+      ${rFooter(4,4)}
     </div>`;
 
-  return page1 + page2 + page3;
+  return page1 + page2 + page3 + page4;
 }
 async function exportMonthlyReportPdf(){
   const fromMk = document.getElementById("report-from-month").value || monthKey();

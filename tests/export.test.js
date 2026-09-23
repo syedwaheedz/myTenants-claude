@@ -48,6 +48,51 @@ test("buildMonthlyReportData/Html shows 'Applied to this month', not raw payment
   } finally { await close(); }
 });
 
+test("Payments received table (Monthly Report + Settlement Summary) lists every payment for tallying against manual/receipt records", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const result = await page.evaluate(async () => {
+      const mk = monthKey();
+      const partnerA = await Repo.addPartner({ name: "Alice", share_percent: 50 });
+      const partnerB = await Repo.addPartner({ name: "Bob", share_percent: 50 });
+      const recvA = await Repo.addReceiver({ name: "Alice Receiver", partner_id: partnerA.id });
+      const recvB = await Repo.addReceiver({ name: "Bob Receiver", partner_id: partnerB.id });
+      const prop = await Repo.addProperty({ name: "Payments Test Property" });
+      const t1 = await Repo.addTenant({ property_id: prop.id, name: "Tenant One", monthly_rent: 5000 });
+      const t2 = await Repo.addTenant({ property_id: prop.id, name: "Tenant Two", monthly_rent: 3000 });
+
+      await Repo.recordRentPayment({ tenant_id: t1.id, total_amount: 5000, date: mk + "-05", splits: [{ receiver_id: recvA.id, amount: 5000 }] });
+      await Repo.recordRentPayment({ tenant_id: t2.id, total_amount: 3000, date: mk + "-10", splits: [{ receiver_id: recvB.id, amount: 3000 }] });
+
+      const rows = await Repo.paymentsReceivedInRange(mk, mk);
+
+      const monthlyData = await buildMonthlyReportData(mk);
+      const monthlyHtml = buildMonthlyReportHtml(monthlyData);
+
+      const computed = await Repo.computeSettlement(mk, mk);
+      const settlementHtml = buildSettlementReportHtml(computed, await Repo.paymentsReceivedInRange(computed.fromPeriod, computed.toPeriod));
+
+      return { rows, monthlyHtml, settlementHtml, monthlyPageCount: (monthlyHtml.match(/r-page/g)||[]).length };
+    });
+    assert.equal(result.rows.length, 2);
+    assert.equal(result.rows[0].total_amount, 5000, "sorted oldest-first by date");
+    assert.equal(result.rows[1].total_amount, 3000);
+    assert.ok(result.rows[0].receivedByNames.join(",").includes("Alice Receiver"));
+    assert.ok(result.rows[1].receivedByNames.join(",").includes("Bob Receiver"));
+
+    assert.ok(result.monthlyHtml.includes("Payments received this month"));
+    assert.ok(result.monthlyHtml.includes("Tenant One"));
+    assert.ok(result.monthlyHtml.includes("Tenant Two"));
+    assert.ok(result.monthlyHtml.includes("Alice Receiver"));
+
+    assert.ok(result.settlementHtml.includes("Payments received this period"));
+    assert.ok(result.settlementHtml.includes("Tenant One"));
+    assert.ok(result.settlementHtml.includes("Bob Receiver"));
+
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test("exportMonthlyReportPdf uses the native print plugin when isNativeApp() is true, and window.print otherwise", async () => {
   const { page, errors, close } = await harness.newPage();
   try {
@@ -90,7 +135,7 @@ test("exportMonthlyReportPdf uses the native print plugin when isNativeApp() is 
 
 // Skipped for now, not because it's failing — the multi-month range feature
 // just shipped and hasn't had real-world use yet; re-enable once it has.
-test("exportMonthlyReportPdf concatenates one 3-page report per month across a From/To range", { skip: true }, async () => {
+test("exportMonthlyReportPdf concatenates one 4-page report per month across a From/To range", { skip: true }, async () => {
   const { page, errors, close } = await harness.newPage();
   try {
     const result = await page.evaluate(async () => {
@@ -117,10 +162,10 @@ test("exportMonthlyReportPdf concatenates one 3-page report per month across a F
       const footerText = [...root.querySelectorAll(".r-footer")].map(f => f.textContent);
       return { pageCount, footerText, fromLabel: fmtMonth(fromMk), toLabel: fmtMonth(toMk) };
     });
-    assert.equal(result.pageCount, 6, "2 months x 3 pages each");
-    // Each month's footer is self-contained ("Page 1 of 3", not "Page 4 of 6")
+    assert.equal(result.pageCount, 8, "2 months x 4 pages each");
+    // Each month's footer is self-contained ("Page 1 of 4", not "Page 5 of 8")
     // but prefixed with its own month so it's clear which month you're looking at.
-    assert.ok(result.footerText.some(t => t.includes("Page 1 of 3")));
+    assert.ok(result.footerText.some(t => t.includes("Page 1 of 4")));
     assert.ok(result.footerText.some(t => t.includes(result.fromLabel)), "footer should mention the From month");
     assert.ok(result.footerText.some(t => t.includes(result.toLabel)), "footer should mention the To month");
     assert.deepEqual(errors, []);
