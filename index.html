@@ -261,6 +261,14 @@
   .cell-pill.partial{background:var(--partial-bg);color:var(--partial);}
   .cell-pill.due{background:var(--due-bg);color:var(--due);}
   .sheet .c-pay{white-space:normal;min-width:170px;}
+  .pool-strip{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;font-size:12.5px;}
+  .pool-strip .pl{display:inline-flex;align-items:center;gap:4px;color:var(--ink-soft);font-weight:600;}
+  .pool-strip .pl .msi{font-size:17px;}
+  .pool-strip .pchip{background:var(--surface);border-radius:999px;padding:4px 10px;box-shadow:var(--shadow-1);}
+  .pool-totals{margin-top:12px;background:var(--surface);border-radius:12px;padding:10px 14px;box-shadow:var(--shadow-1);}
+  .pool-totals .pt-row{display:flex;justify-content:space-between;padding:4px 0;font-size:14px;}
+  .pool-totals .pt-row.total{border-top:1px solid var(--line, rgba(0,0,0,.12));margin-top:4px;padding-top:8px;font-weight:700;}
+  .pool-strip .pchip.warn{color:var(--due);}
   .pay-line{display:block;background:none;border:none;padding:1px 0;font:inherit;font-size:12px;color:var(--ink);cursor:pointer;text-align:left;}
   .pay-line:hover{color:var(--accent);text-decoration:underline;}
   .sheet .c-act{text-align:right;}
@@ -1391,9 +1399,15 @@ const Repo = {
     const [statuses, txns, splits, receivers] = await Promise.all([
       this.monthlyStatusForAllTenants(mk), getAll("transactions"), getAll("transaction_splits"), this.allReceivers()
     ]);
+    const partnerById = Object.fromEntries((await this.allPartners()).map(p=>[p.id,p]));
     const receiverById = Object.fromEntries(receivers.map(r=>[r.id,r]));
-    const receiverNamesByTxn = {};
-    for (const s of splits){ const r = receiverById[s.receiver_id]; if (r) (receiverNamesByTxn[s.transaction_id] ||= []).push(r.name); }
+    const receiverNamesByTxn = {}, creditsByTxn = {};
+    for (const s of splits){
+      const r = receiverById[s.receiver_id]; if (!r) continue;
+      (receiverNamesByTxn[s.transaction_id] ||= []).push(r.name);
+      // The pool is the partner this receiver reports into — whose pool the money is credited to.
+      (creditsByTxn[s.transaction_id] ||= []).push({receiver: r.name, pool: (partnerById[r.partner_id]||{}).name || null, amount: s.amount});
+    }
     const paymentsByTenant = {};
     for (const x of txns){
       if (x.is_voided || x.type !== "RENT_PAYMENT" || (x.for_month || monthKey(x.date)) !== mk) continue;
@@ -1402,7 +1416,7 @@ const Repo = {
     return statuses.map(r => {
       const payments = (paymentsByTenant[r.tenant.id] || [])
         .sort((a,b)=>a.date.localeCompare(b.date))
-        .map(x => ({ id:x.id, date:x.date, amount:x.total_amount + x.repair_amount, receivedBy: receiverNamesByTxn[x.id] || [] }));
+        .map(x => ({ id:x.id, date:x.date, amount:x.total_amount + x.repair_amount, receivedBy: receiverNamesByTxn[x.id] || [], credits: creditsByTxn[x.id] || [] }));
       return {
         ...r, payments,
         pending: Math.max(0, r.due - r.appliedToCurrentMonth),
@@ -1902,6 +1916,7 @@ const SHEET_COLS = [
   {key:"totalOwed", label:"Total owed", num:true},
 ];
 const SHEET_STATUS_ORDER = {due:0, partial:1, paid:2};
+let _sheetPools = {rows:[], unassigned:0}; // unsettled cash per partner pool, as of now
 let _sheetRows = []; // the month's rentRoll, kept so typing in search doesn't refetch
 
 function openTenantSheet(filter, propertyId){
@@ -1937,7 +1952,7 @@ function tenantSheetView(){
   let rows = scope;
   if (filter==="pending") rows = rows.filter(r=>r.status!=="paid");
   if (filter==="paid") rows = rows.filter(r=>r.status==="paid");
-  if (q) rows = rows.filter(r => [r.tenant.name, r.property&&r.property.name, r.tenant.phone, ...r.payments.flatMap(p=>p.receivedBy)]
+  if (q) rows = rows.filter(r => [r.tenant.name, r.property&&r.property.name, r.tenant.phone, ...r.payments.flatMap(p=>[...p.receivedBy, ...p.credits.map(c=>c.pool)])]
     .filter(Boolean).join(" ").toLowerCase().includes(q));
   const sort = State.sheetSort || {key:"name", dir:1};
   const val = (r) => sort.key==="name" ? r.tenant.name.toLowerCase() : sort.key==="status" ? SHEET_STATUS_ORDER[r.status] : r[sort.key];
@@ -1984,11 +1999,25 @@ Screens.tenants = async function(){
       <button class="icon-btn" onclick="openModal('addTenant')" title="Add tenant">${ic("person_add")}</button>
     </div>`
   });
-  const rows = await Repo.rentRoll(mk);
+  const [rows, pools] = await Promise.all([Repo.rentRoll(mk), Repo.cashInHandByPartner()]);
   if ((State.sheetMonth || monthKey()) !== mk) return; // month changed while loading
-  _sheetRows = rows;
+  _sheetRows = rows; _sheetPools = pools;
   renderTenantSheet(properties.length === 0);
 };
+
+// "Ravi → Ahmed's pool" (receiver → whose pool it is credited to); just the
+// receiver when they have no partner linked, the name once when they're the same.
+function creditLabel(credits){
+  return credits.map(c => !c.pool ? `${c.receiver} (no pool)` : c.pool===c.receiver ? `${c.pool}'s pool` : `${c.receiver} → ${c.pool}'s pool`).join(", ");
+}
+
+// What the given rows' payments credited to each partner pool (this sheet's
+// month/filters), keyed by pool name, in first-seen order.
+function sheetPoolTotals(rows){
+  const t = {};
+  for (const r of rows) for (const p of r.payments) for (const c of p.credits){ const k = c.pool || "No pool"; t[k] = (t[k]||0) + c.amount; }
+  return t;
+}
 
 function renderTenantSheet(noProperties){
   const el = document.getElementById("sheet-body");
@@ -2015,7 +2044,9 @@ function renderTenantSheet(noProperties){
 
   const rowHtml = (r) => {
     const t = r.tenant;
-    const payLines = r.payments.map(p => `<button class="pay-line" onclick="event.stopPropagation(); openTxnDetail('${p.id}')">${fmtDayMonth(p.date)} · <b class="num">${fmtMoney(p.amount)}</b>${p.receivedBy.length ? ` · ${esc(p.receivedBy.join(", "))}` : ""}</button>`).join("");
+    const payLines = r.payments.map(p => `<button class="pay-line" onclick="event.stopPropagation(); openTxnDetail('${p.id}')">${fmtDayMonth(p.date)} · <b class="num">${fmtMoney(p.amount)}</b></button>`).join("");
+    const byLines = r.payments.map(p => `<div class="pay-line">${p.credits.length ? esc([...new Set(p.credits.map(c=>c.receiver))].join(", ")) : "—"}</div>`).join("");
+    const poolLines = r.payments.map(p => `<div class="pay-line">${p.credits.length ? esc([...new Set(p.credits.map(c=>c.pool || "No pool"))].join(", ")) : "—"}</div>`).join("");
     const payAmount = r.totalOwed > 0.004 ? Math.round(r.totalOwed*100)/100 : "null";
     const subParts = [];
     if (!grouped && !State.sheetProperty && r.property) subParts.push(esc(r.property.name));
@@ -2032,6 +2063,8 @@ function renderTenantSheet(noProperties){
         <td class="num">${money(r.oldDues)}</td>
         <td class="num">${money(r.totalOwed,"strong")}</td>
         <td class="c-pay">${payLines || `<span class="zero">—</span>`}</td>
+        <td class="c-by">${byLines || `<span class="zero">—</span>`}</td>
+        <td class="c-pool">${poolLines || `<span class="zero">—</span>`}</td>
         <td class="c-act">
           <button class="cell-btn" onclick="event.stopPropagation(); openAddPayment('${t.id}', {forMonth:'${mk}', amount:${payAmount}})" title="Record a payment">${ic("add")}Pay</button>
           ${r.totalOwed>0.004 && !t.archived ? `<button class="cell-btn wa" onclick="event.stopPropagation(); requestPaymentViaWhatsApp('${t.id}')" title="Send WhatsApp reminder">${ic("chat")}</button>` : ""}
@@ -2052,14 +2085,20 @@ function renderTenantSheet(noProperties){
   } else {
     body = `
     <div class="sheet-wrap"><table class="sheet">
-      <thead><tr>${head}<th>Payments · date · received by</th><th class="c-act"></th></tr></thead>
+      <thead><tr>${head}<th>Payments · date</th><th>Received by</th><th>Partner pool</th><th class="c-act"></th></tr></thead>
       <tbody>
         ${grouped ? v.groups.map(g => `
-          <tr class="grp"><td class="c-name">${ic("apartment")}${esc(g.name)} <span class="sub">${g.rows.length}</span></td><td class="c-status"></td>${totalsCells(g.rows)}<td></td><td class="c-act"></td></tr>
+          <tr class="grp"><td class="c-name">${ic("apartment")}${esc(g.name)} <span class="sub">${g.rows.length}</span></td><td class="c-status"></td>${totalsCells(g.rows)}<td></td><td></td><td></td><td class="c-act"></td></tr>
           ${g.rows.map(rowHtml).join("")}`).join("") : v.rows.map(rowHtml).join("")}
       </tbody>
-      <tfoot><tr><td class="c-name">Total · ${v.rows.length} tenant${v.rows.length===1?"":"s"}</td><td class="c-status"></td>${totalsCells(v.rows)}<td></td><td class="c-act"></td></tr></tfoot>
-    </table></div>`;
+      <tfoot><tr><td class="c-name">Total · ${v.rows.length} tenant${v.rows.length===1?"":"s"}</td><td class="c-status"></td>${totalsCells(v.rows)}<td></td><td></td><td></td><td class="c-act"></td></tr></tfoot>
+    </table></div>
+    ${(() => { const pt = sheetPoolTotals(v.rows), names = Object.keys(pt); return names.length ? `
+    <div class="pool-totals">
+      <div class="section-title">${ic("groups")}Partner pool totals · ${esc(fmtMonth(mk))}</div>
+      ${names.map(n=>`<div class="pt-row"><span>${esc(n)}</span><b class="num">${fmtMoney(pt[n])}</b></div>`).join("")}
+      <div class="pt-row total"><span>Total received</span><b class="num">${fmtMoney(names.reduce((s,n)=>s+pt[n],0))}</b></div>
+    </div>` : ""; })()}`;
   }
 
   el.innerHTML = `
@@ -2069,6 +2108,12 @@ function renderTenantSheet(noProperties){
       <div class="ss"><div class="l">Pending</div><div class="v num" style="color:var(--due);">${fmtMoney(sum(v.scope,"pending"))}</div></div>
       <div class="ss"><div class="l">Total owed</div><div class="v num">${fmtMoney(sum(v.scope,"totalOwed"))}</div><div class="s">incl. old dues</div></div>
     </div>
+    ${_sheetPools.rows.some(r=>r.amount>0.004) || _sheetPools.unassigned>0.004 ? `
+    <div class="pool-strip" title="Unsettled cash held in each partner's pool, as of now (all months)">
+      <span class="pl">${ic("groups")}In each pool now</span>
+      ${_sheetPools.rows.filter(r=>r.amount>0.004).map(r=>`<span class="pchip">${esc(r.partner.name)} <b class="num">${fmtMoney(r.amount)}</b></span>`).join("")}
+      ${_sheetPools.unassigned>0.004 ? `<span class="pchip warn">No pool <b class="num">${fmtMoney(_sheetPools.unassigned)}</b></span>` : ""}
+    </div>` : ""}
     <div class="sheet-progress">
       <div class="progress-track"><div class="progress-fill" style="width:${Math.min(pct,100)}%;"></div></div>
       <span class="num"><b>${pct}%</b> of ${esc(fmtMonth(mk))}'s rent collected</span>
@@ -2091,14 +2136,23 @@ async function exportTenantSheetCsv(){
   if (!v.rows.length) return toast("Nothing to export for this view");
   const cell = (x) => { const s = String(x==null?"":x); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
   const n = (x) => (Math.round((x||0)*100)/100).toFixed(2);
-  const lines = [["Month","Property","Tenant","Status","Rent","Paid","Pending","Old dues","Total owed","Payments"]];
+  const uniq = (a) => [...new Set(a)];
+  const lines = [["Month","Property","Tenant","Status","Rent","Paid","Pending","Old dues","Total owed","Received by","Credited to pool","Payments"]];
   for (const r of v.rows){
     lines.push([fmtMonth(mk), r.property?r.property.name:"", r.tenant.name + (r.tenant.archived?" (moved out)":""), r.status,
       n(r.due), n(r.paid), n(r.pending), n(r.oldDues), n(r.totalOwed),
-      r.payments.map(p=>`${p.date} ${n(p.amount)}${p.receivedBy.length?" via "+p.receivedBy.join("/"):""}`).join("; ")]);
+      uniq(r.payments.flatMap(p=>p.credits.map(c=>c.receiver))).join("; "),
+      uniq(r.payments.flatMap(p=>p.credits.map(c=>c.pool || "No pool"))).join("; "),
+      r.payments.map(p=>`${p.date} ${n(p.amount)}${p.credits.length?" via "+creditLabel(p.credits):""}`).join("; ")]);
   }
   const tot = (k) => n(v.rows.reduce((s,r)=>s+r[k],0));
-  lines.push(["","","Total","",tot("due"),tot("paid"),tot("pending"),tot("oldDues"),tot("totalOwed"),""]);
+  lines.push(["","","Total","",tot("due"),tot("paid"),tot("pending"),tot("oldDues"),tot("totalOwed"),"","",""]);
+  // What this sheet's payments credited to each pool, and what each pool holds now.
+  const thisSheet = sheetPoolTotals(v.rows);
+  const poolNow = Object.fromEntries(_sheetPools.rows.map(x=>[x.partner.name, x.amount]));
+  if (_sheetPools.unassigned > 0.004) poolNow["No pool"] = _sheetPools.unassigned;
+  lines.push([], ["Pool summary","Credited by this sheet","Unsettled in pool now"]);
+  for (const name of [...new Set([...Object.keys(thisSheet), ...Object.keys(poolNow)])]) lines.push([name, n(thisSheet[name]), n(poolNow[name])]);
   const blob = new Blob([lines.map(l=>l.map(cell).join(",")).join("\r\n")], {type:"text/csv"});
   const filename = `mytenants-rent-sheet-${mk}.csv`;
   if (isNativeApp()) return nativeSaveAndShare(filename, blob, `Rent sheet ${fmtMonth(mk)}`);
