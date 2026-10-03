@@ -126,7 +126,7 @@ test("Tenants sheet is the home screen and renders a grouped grid with correct t
     assert.equal(result.footer[5], "₹3,000");
     assert.equal(result.footer[6], "₹10,500");
     assert.deepEqual(result.chips, ["All 4", "Pending 3", "Paid 1"]);
-    assert.match(result.payLine, /₹5,000 · Ravi/);
+    assert.match(result.payLine, /₹5,000/);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
@@ -196,10 +196,10 @@ test("Tenants sheet: CSV export matches the visible rows", async () => {
       return captured.text();
     });
     const lines = csv.split("\r\n");
-    assert.equal(lines[0], "Month,Property,Tenant,Status,Rent,Paid,Pending,Old dues,Total owed,Payments");
-    assert.equal(lines.length, 1 + 3 + 1, "header + 3 pending tenants + total row");
-    assert.match(lines[1], /,Alpha Block,Bob,partial,6000\.00,2500\.00,3500\.00,0\.00,3500\.00,/);
-    assert.equal(lines[4], ",,Total,,13000.00,5500.00,10500.00,3000.00,10500.00,");
+    assert.equal(lines[0], "Month,Property,Tenant,Status,Rent,Paid,Pending,Old dues,Total owed,Received by,Credited to pool,Payments");
+    assert.equal(lines[1 + 3 + 1], "", "blank line, then the pool summary, after header + 3 pending tenants + total row");
+    assert.match(lines[1], /,Alpha Block,Bob,partial,6000\.00,2500\.00,3500\.00,0\.00,3500\.00,,,/);
+    assert.equal(lines[4], ",,Total,,13000.00,5500.00,10500.00,3000.00,10500.00,,,");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
@@ -226,6 +226,47 @@ test("Tenants sheet: a row's Pay button opens Add payment on that month with the
     assert.equal(result.amount, "3500");
     assert.equal(result.forMonth, await page.evaluate(() => monthKey()));
     assert.equal(result.stillOnSheet, "tenants", "Pay must not also trigger the row's open-ledger click");
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test("Tenants sheet and CSV show who received each payment and whose pool it was credited to", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const csv = await page.evaluate(async () => {
+      const mk = monthKey();
+      const partner = await Repo.addPartner({ name: "Ahmed", share_percent: 100 });
+      const ravi = await Repo.addReceiver({ name: "Ravi", partner_id: partner.id });
+      const loose = await Repo.addReceiver({ name: "Loose" });
+      const prop = await Repo.addProperty({ name: "Pools" });
+      const a = await Repo.addTenant({ property_id: prop.id, name: "Anil", monthly_rent: 1000 });
+      const b = await Repo.addTenant({ property_id: prop.id, name: "Bina", monthly_rent: 2000 });
+      await Repo.recordRentPayment({ tenant_id: a.id, total_amount: 1000, date: todayISO(), splits: [{ receiver_id: ravi.id, amount: 1000 }] });
+      await Repo.recordRentPayment({ tenant_id: b.id, total_amount: 500, date: todayISO(), splits: [{ receiver_id: loose.id, amount: 500 }] });
+      State.tab = "tenants"; State.sheetFilter = "all"; State.sheetProperty = ""; State.sheetSearch = "";
+      await Screens.tenants();
+      const strip = document.querySelector(".pool-strip")?.textContent || "";
+      const line = [...document.querySelectorAll(".pay-line")].map(x => x.textContent);
+      let captured = null;
+      const origCreate = URL.createObjectURL;
+      URL.createObjectURL = (blob) => { captured = blob; return origCreate.call(URL, blob); };
+      await exportTenantSheetCsv();
+      URL.createObjectURL = origCreate;
+      const totals = document.querySelector(".pool-totals")?.textContent || "";
+      return { strip, line, totals, csv: await captured.text() };
+    });
+    assert.match(csv.strip, /Ahmed/);
+    assert.match(csv.strip, /No pool/);
+    assert.deepEqual(csv.line.slice(1, 3), ["Ravi", "Ahmed"], "separate Received by and Partner pool columns");
+    assert.deepEqual(csv.line.slice(4, 6), ["Loose", "No pool"]);
+    assert.match(csv.totals, /Partner pool totals/);
+    assert.match(csv.totals, /Ahmed.*₹1,000/);
+    assert.match(csv.totals, /No pool.*₹500/);
+    assert.match(csv.totals, /Total received.*₹1,500/);
+    assert.match(csv.csv, /Anil,paid,1000\.00,1000\.00,0\.00,0\.00,0\.00,Ravi,Ahmed,/);
+    assert.match(csv.csv, /Bina,partial,.*,Loose,No pool,/);
+    assert.match(csv.csv, /Pool summary,Credited by this sheet,Unsettled in pool now/);
+    assert.match(csv.csv, /\r\nAhmed,1000\.00,1000\.00/);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
