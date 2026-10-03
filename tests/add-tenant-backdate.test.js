@@ -38,3 +38,27 @@ test("addTenant without start_month behaves as before (charged current month onl
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+test("addTenant with a future start_month adds the tenant now but charges nothing until that month", async () => {
+  const { page, errors, close } = await harness.newPage();
+  try {
+    const r = await page.evaluate(async () => {
+      const mk = monthKey();
+      const start = addMonths(mk, 2);
+      const prop = await Repo.addProperty({ name: "Grace" });
+      const t = await Repo.addTenant({ property_id: prop.id, name: "Rent free", monthly_rent: 1000, start_month: start });
+      await Repo.runDueAccruals();
+      const after = await get("tenants", t.id);
+      const nowStatus = Repo.monthlyTenantStatusFromTxns(after, mk, []);
+      const startStatus = Repo.monthlyTenantStatusFromTxns(after, start, []);
+      let err = null;
+      try { await Repo.addTenant({ property_id: prop.id, name: "X", monthly_rent: 1, start_month: start, paid_amount: 5 }); } catch (e) { err = e.message; }
+      return { balance: after.current_balance, nowStatus, startStatus, err };
+    });
+    assert.equal(r.balance, 0);
+    assert.equal(r.nowStatus, null);
+    assert.ok(r.startStatus);
+    assert.match(r.err, /before rent starts/);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});

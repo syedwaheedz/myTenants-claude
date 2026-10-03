@@ -688,14 +688,16 @@ const Repo = {
   async tenantCountForProperty(propertyId){ return (await this.tenantsForProperty(propertyId)).filter(t=>!t.archived).length; },
 
   // ---- Tenants & accrual ----
-  // start_month (optional, "YYYY-MM"): backdate the tenant to an earlier month —
-  // e.g. re-adding someone who was already here — so every month from then to
-  // now is charged. paid_amount/receiver_id (optional) record what they have
+  // start_month (optional, "YYYY-MM"): when rent starts. An earlier month
+  // backfills a tenant who was already here (every month through now is
+  // charged); a later month adds them now with a grace / rent-free period —
+  // nothing accrues until that month arrives. paid_amount/receiver_id (optional) record what they have
   // already paid toward that first month.
   async addTenant({property_id, name, monthly_rent, phone, start_month, paid_amount, receiver_id}){
     const rate = Number(monthly_rent)||0;
     const nowMk = monthKey();
-    const startMk = (start_month && start_month < nowMk) ? start_month : nowMk;
+    const startMk = start_month || nowMk;
+    if (startMk > nowMk && Number(paid_amount)) throw new Error("A payment can't be recorded before rent starts — add it once the start month arrives.");
     const t = {
       id:uid(), property_id, name, monthly_rent:rate, current_balance:0,
       // Accrue from the month BEFORE the start month so the catch-up loop
@@ -2879,8 +2881,8 @@ Modals.addTenant = async (_, root) => {
     <label>Phone number (optional)</label>
     <input id="m-phone" type="tel" placeholder="e.g. 91XXXXXXXXXX, for WhatsApp reminders">
     <label>Rent starts from</label>
-    <input id="m-start" type="month" max="${monthKey()}" value="${monthKey()}">
-    <div class="meta">Pick an earlier month (e.g. when re-adding a tenant) to charge rent from then.</div>
+    <input id="m-start" type="month" value="${monthKey()}">
+    <div class="meta">Earlier month: backfills a tenant who was already here. Later month: a rent-free / grace period — no rent is charged until then.</div>
     <label>Already paid for that month (optional)</label>
     <input id="m-paid" type="number" step="0.01" placeholder="0">
     <label>Collected by (optional)</label>
@@ -2891,8 +2893,9 @@ Modals.addTenant = async (_, root) => {
 async function saveTenant(){
   const name = document.getElementById("m-name").value.trim();
   if (!name) return toast("Enter a tenant name");
-  await Repo.addTenant({property_id: document.getElementById("m-property").value, name, monthly_rent: document.getElementById("m-rent").value, phone: document.getElementById("m-phone").value.trim(),
-    start_month: document.getElementById("m-start").value || undefined, paid_amount: document.getElementById("m-paid").value, receiver_id: document.getElementById("m-receiver").value || null});
+  try{ await Repo.addTenant({property_id: document.getElementById("m-property").value, name, monthly_rent: document.getElementById("m-rent").value, phone: document.getElementById("m-phone").value.trim(),
+    start_month: document.getElementById("m-start").value || undefined, paid_amount: document.getElementById("m-paid").value, receiver_id: document.getElementById("m-receiver").value || null}); }
+  catch(e){ return toast(e.message); }
   closeModal(); render();
 }
 Modals.editTenant = async (_, root, errMsg) => {
