@@ -29,11 +29,9 @@ jobs:
         id: check
         run: |
           VERSION=$(node -pe "require('./version.json').version")
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           echo "version.json version: $VERSION"
-          echo "latest tag: ${LATEST_TAG:-<none>}"
-          if [ "v$VERSION" = "$LATEST_TAG" ]; then
-            echo "No version bump — skipping release."
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists — skipping release."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
           else
             echo "should_release=true" >> "$GITHUB_OUTPUT"
