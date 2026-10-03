@@ -688,12 +688,20 @@ const Repo = {
   async tenantCountForProperty(propertyId){ return (await this.tenantsForProperty(propertyId)).filter(t=>!t.archived).length; },
 
   // ---- Tenants & accrual ----
-  async addTenant({property_id, name, monthly_rent, phone}){
+  // start_month (optional, "YYYY-MM"): backdate the tenant to an earlier month —
+  // e.g. re-adding someone who was already here — so every month from then to
+  // now is charged. paid_amount/receiver_id (optional) record what they have
+  // already paid toward that first month.
+  async addTenant({property_id, name, monthly_rent, phone, start_month, paid_amount, receiver_id}){
     const rate = Number(monthly_rent)||0;
-    const startMk = monthKey();
+    const nowMk = monthKey();
+    const startMk = (start_month && start_month < nowMk) ? start_month : nowMk;
     const t = {
       id:uid(), property_id, name, monthly_rent:rate, current_balance:0,
-      last_accrual_month: startMk, start_date: todayISO(), archived:false,
+      // Accrue from the month BEFORE the start month so the catch-up loop
+      // charges the start month itself and every month through today.
+      last_accrual_month: addMonths(startMk, -1),
+      start_date: startMk === nowMk ? todayISO() : startMk + "-01", archived:false,
       rent_history: [{effective_month: startMk, rent: rate}],
       phone: (phone||"").trim()
     };
@@ -701,7 +709,9 @@ const Repo = {
     // A brand-new tenant owes rent for their move-in month right away — don't
     // make them wait for next calendar month's accrual pass to show as Due.
     await this.accrueMonthlyRent(t);
-    return t;
+    const paid = Number(paid_amount)||0;
+    if (paid) await this.recordRentPayment({tenant_id: t.id, total_amount: paid, for_month: startMk, splits: receiver_id ? [{receiver_id, amount: paid}] : []});
+    return get("tenants", t.id);
   },
   async updateTenant(id, patch){ const t=await get("tenants", id); if(!t) throw new Error("Tenant not found"); Object.assign(t, patch); await put("tenants", t); return t; },
   async deleteTenant(id){
@@ -2858,6 +2868,7 @@ async function deletePropertyConfirm(id){
 
 Modals.addTenant = async (_, root) => {
   const properties = await Repo.allProperties();
+  const receivers = await Repo.allReceivers();
   if (!properties.length){ closeModal(); toast("Add a property first"); goTab("properties"); return; }
   const preselect = State.sheetProperty || "";
   root.innerHTML = modalShell("Add tenant", `
@@ -2867,13 +2878,21 @@ Modals.addTenant = async (_, root) => {
     <label>Monthly rent</label><input id="m-rent" type="number" step="0.01">
     <label>Phone number (optional)</label>
     <input id="m-phone" type="tel" placeholder="e.g. 91XXXXXXXXXX, for WhatsApp reminders">
+    <label>Rent starts from</label>
+    <input id="m-start" type="month" max="${monthKey()}" value="${monthKey()}">
+    <div class="meta">Pick an earlier month (e.g. when re-adding a tenant) to charge rent from then.</div>
+    <label>Already paid for that month (optional)</label>
+    <input id="m-paid" type="number" step="0.01" placeholder="0">
+    <label>Collected by (optional)</label>
+    <select id="m-receiver"><option value="">—</option>${receivers.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select>
     <button class="btn" style="margin-top:16px;" onclick="saveTenant()">Save tenant</button>
   `);
 };
 async function saveTenant(){
   const name = document.getElementById("m-name").value.trim();
   if (!name) return toast("Enter a tenant name");
-  await Repo.addTenant({property_id: document.getElementById("m-property").value, name, monthly_rent: document.getElementById("m-rent").value, phone: document.getElementById("m-phone").value.trim()});
+  await Repo.addTenant({property_id: document.getElementById("m-property").value, name, monthly_rent: document.getElementById("m-rent").value, phone: document.getElementById("m-phone").value.trim(),
+    start_month: document.getElementById("m-start").value || undefined, paid_amount: document.getElementById("m-paid").value, receiver_id: document.getElementById("m-receiver").value || null});
   closeModal(); render();
 }
 Modals.editTenant = async (_, root, errMsg) => {
