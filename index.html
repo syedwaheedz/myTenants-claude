@@ -184,6 +184,90 @@
   .data-table tr.tap{cursor:pointer;}
   .data-table tr.tap:active{opacity:.7;}
 
+  /* ---- Tenants sheet: the home screen. A real grid — gridlines, sticky
+     header / first column / totals row, status-tinted cells — so who paid
+     and who's pending reads at a glance, like the paper rent register. ---- */
+  body.wide #app, body.wide .tabs{max-width:1180px;}
+  body.wide .fab-wrap{max-width:1148px;}
+  .sheet-controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+  .sheet-controls > *{margin:0;}
+  .sheet-controls select{flex:1 1 130px;width:auto;}
+  .sheet-controls input[type=search]{flex:2 1 180px;width:auto;}
+  .month-nav{display:flex;align-items:center;gap:6px;flex:1 1 230px;}
+  .month-nav input{flex:1;min-width:0;text-align:center;font-weight:600;}
+  .month-nav .icon-btn:disabled{opacity:.35;cursor:default;}
+  .sheet-prop-note{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;color:var(--ink-soft);margin:0 2px 10px 2px;}
+  .sheet-prop-note .msi{font-size:18px;}
+  .sheet-prop-note .link-btn{margin-left:auto;}
+  .sheet-loading{color:var(--ink-soft);font-size:13px;padding:24px 0;text-align:center;}
+  .sheet-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}
+  .sheet-summary .ss{background:var(--surface);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow-1);min-width:0;}
+  .sheet-summary .l{font-size:11px;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .sheet-summary .v{font-size:17px;font-weight:700;margin-top:2px;white-space:nowrap;}
+  .sheet-summary .s{font-size:11px;color:var(--ink-soft);}
+  .sheet .m-status{display:none;margin-top:3px;}
+  /* Phones: every pixel of width goes to the money columns — status rides
+     under the name (plus the colored bar), the summary shrinks to one row. */
+  @media (max-width:560px){
+    .sheet-summary{gap:6px;}
+    .sheet-summary .ss{padding:8px;border-radius:10px;}
+    .sheet-summary .l{font-size:9.5px;}
+    .sheet-summary .v{font-size:13.5px;}
+    .sheet-summary .s{display:none;}
+    .sheet .c-status{display:none;}
+    .sheet .m-status{display:block;}
+    .sheet th, .sheet td{padding:7px 7px;}
+    .sheet .c-name{min-width:100px;max-width:118px;}
+  }
+  .sheet-progress{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;}
+  .sheet-progress .progress-track{flex:1;height:8px;}
+  .sheet-progress b{color:var(--paid);}
+  .filter-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+  .fchip{background:var(--surface);border:1.5px solid var(--md-outline-variant);border-radius:10px;padding:6px 12px;font-size:13px;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:inherit;display:inline-flex;gap:6px;align-items:center;}
+  .fchip b{color:var(--ink);font-variant-numeric:tabular-nums;}
+  .fchip.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink);}
+  .fchip.due.active{background:var(--due-bg);border-color:var(--due);color:var(--due);}
+  .fchip.paid.active{background:var(--paid-bg);border-color:var(--paid);color:var(--paid);}
+  .fchip-check{display:inline-flex;align-items:center;gap:6px;margin:0 0 0 auto;font-size:12.5px;cursor:pointer;}
+  .sheet-wrap{background:var(--surface);border-radius:12px;box-shadow:var(--shadow-1);overflow:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 150px);border:1px solid var(--line);}
+  .sheet{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;white-space:nowrap;}
+  .sheet th, .sheet td{padding:8px 10px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:middle;background:var(--surface);}
+  .sheet th:last-child, .sheet td:last-child{border-right:none;}
+  .sheet thead th{position:sticky;top:0;z-index:2;background:var(--md-secondary-container);color:var(--md-on-secondary-container);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;text-align:left;}
+  .sheet th.sortable{cursor:pointer;user-select:none;}
+  .sheet th .sort-ic{font-size:14px;margin-left:2px;}
+  .sheet .num{text-align:right;font-variant-numeric:tabular-nums;}
+  .sheet .c-name{position:sticky;left:0;z-index:1;min-width:130px;max-width:200px;white-space:normal;box-shadow:1px 0 0 var(--line);}
+  .sheet thead th.c-name{z-index:3;}
+  .sheet .tn{font-weight:600;font-size:13.5px;}
+  .sheet .sub{color:var(--ink-soft);font-size:11px;font-weight:400;}
+  .sheet td.num .sub{white-space:normal;line-height:1.25;}
+  .sheet tbody tr.tap{cursor:pointer;}
+  .sheet tbody tr.tap:hover td{background:var(--md-surface);}
+  .sheet tbody tr.moved-out td{color:var(--ink-soft);} /* not opacity: sticky cells must stay opaque */
+  .sheet tr.st-due td.c-name{box-shadow:inset 4px 0 0 var(--due), 1px 0 0 var(--line);}
+  .sheet tr.st-partial td.c-name{box-shadow:inset 4px 0 0 var(--partial), 1px 0 0 var(--line);}
+  .sheet tr.st-paid td.c-name{box-shadow:inset 4px 0 0 var(--paid), 1px 0 0 var(--line);}
+  .sheet tr.grp td{background:var(--md-surface-variant);font-weight:700;font-size:12.5px;}
+  .sheet tr.grp td .msi{font-size:16px;margin-right:4px;}
+  .sheet tfoot td{position:sticky;bottom:0;z-index:1;background:var(--accent-soft);color:var(--accent-ink);font-weight:700;border-top:2px solid var(--accent);border-bottom:none;}
+  .sheet tfoot td.c-name{z-index:2;}
+  .sheet .paid-amt{color:var(--paid);font-weight:600;}
+  .sheet .due-amt{color:var(--due);font-weight:600;}
+  .sheet .strong{font-weight:700;}
+  .sheet .zero{color:var(--md-outline);}
+  .cell-pill{display:inline-block;padding:2px 9px;border-radius:6px;font-size:11.5px;font-weight:700;}
+  .cell-pill.paid{background:var(--paid-bg);color:var(--paid);}
+  .cell-pill.partial{background:var(--partial-bg);color:var(--partial);}
+  .cell-pill.due{background:var(--due-bg);color:var(--due);}
+  .sheet .c-pay{white-space:normal;min-width:170px;}
+  .pay-line{display:block;background:none;border:none;padding:1px 0;font:inherit;font-size:12px;color:var(--ink);cursor:pointer;text-align:left;}
+  .pay-line:hover{color:var(--accent);text-decoration:underline;}
+  .sheet .c-act{text-align:right;}
+  .cell-btn{display:inline-flex;align-items:center;gap:2px;background:var(--accent-soft);color:var(--accent-ink);border:none;border-radius:8px;padding:5px 9px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;vertical-align:middle;}
+  .cell-btn .msi{font-size:16px;}
+  .cell-btn.wa{background:#25D366;color:#fff;padding:5px 7px;margin-left:4px;}
+
   .chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:12.5px;font-weight:600;white-space:nowrap;}
   .chip.paid{background:var(--paid-bg);color:var(--paid);}
   .chip.due{background:var(--due-bg);color:var(--due);}
@@ -196,6 +280,7 @@
   .empty{text-align:center;color:var(--ink-soft);padding:40px 16px;border:1.5px dashed var(--line);border-radius:var(--radius);}
   .empty .msi{font-size:32px;color:var(--md-outline);margin-bottom:8px;}
   .empty .big{font-size:15px;color:var(--ink);margin-bottom:4px;font-weight:600;}
+  .empty .btn .msi{font-size:20px;color:inherit;margin:0;}
 
   /* ---- Buttons (Material filled / tonal / outlined) ---- */
   .btn{
@@ -224,7 +309,7 @@
 
   label{display:block;font-size:13px;color:var(--ink-soft);margin:14px 0 5px 0;font-weight:500;}
   label:first-of-type{margin-top:0;}
-  input[type=text],input[type=number],input[type=date],input[type=month],select,textarea{
+  input[type=text],input[type=search],input[type=tel],input[type=number],input[type=date],input[type=month],select,textarea{
     width:100%;padding:12px 14px;border:1.5px solid var(--md-outline-variant);border-radius:12px;
     font-size:14.5px;background:var(--surface);color:var(--ink);font-family:inherit;
   }
@@ -299,8 +384,6 @@
   .segmented{display:flex;background:var(--md-surface-variant);border-radius:12px;padding:3px;margin-bottom:12px;}
   .segmented button{flex:1;background:none;border:none;padding:8px 10px;border-radius:9px;font-size:13px;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:inherit;}
   .segmented button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-1);}
-  .month-summary{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);margin:2px 2px 12px 2px;flex-wrap:wrap;}
-  .month-summary b{color:var(--ink);}
   .snapshot-canvas-wrap{background:var(--md-surface-variant);border-radius:12px;padding:10px;margin-bottom:14px;display:flex;justify-content:center;}
   .snapshot-canvas-wrap canvas{width:100%;max-width:340px;height:auto;border-radius:8px;box-shadow:var(--shadow-2);}
 
@@ -1288,6 +1371,34 @@ const Repo = {
       .filter(Boolean)
       .sort((a,b)=>a.tenant.name.localeCompare(b.tenant.name));
   },
+  // The Tenants sheet's rows for one month: each tenant's monthly status (the
+  // same oldest-debt-first rule as above, so the sheet always agrees with the
+  // Dashboard and the PDF report) plus the actual payments counted toward that
+  // month — when each was received, how much, and who collected it.
+  async rentRoll(mk){
+    const [statuses, txns, splits, receivers] = await Promise.all([
+      this.monthlyStatusForAllTenants(mk), getAll("transactions"), getAll("transaction_splits"), this.allReceivers()
+    ]);
+    const receiverById = Object.fromEntries(receivers.map(r=>[r.id,r]));
+    const receiverNamesByTxn = {};
+    for (const s of splits){ const r = receiverById[s.receiver_id]; if (r) (receiverNamesByTxn[s.transaction_id] ||= []).push(r.name); }
+    const paymentsByTenant = {};
+    for (const x of txns){
+      if (x.is_voided || x.type !== "RENT_PAYMENT" || (x.for_month || monthKey(x.date)) !== mk) continue;
+      (paymentsByTenant[x.tenant_id] ||= []).push(x);
+    }
+    return statuses.map(r => {
+      const payments = (paymentsByTenant[r.tenant.id] || [])
+        .sort((a,b)=>a.date.localeCompare(b.date))
+        .map(x => ({ id:x.id, date:x.date, amount:x.total_amount + x.repair_amount, receivedBy: receiverNamesByTxn[x.id] || [] }));
+      return {
+        ...r, payments,
+        pending: Math.max(0, r.due - r.appliedToCurrentMonth),
+        oldDues: Math.max(0, r.priorArrears),
+        totalOwed: Math.max(0, r.priorArrears + r.due - r.paid)
+      };
+    });
+  },
   // Per-property rollup for a given month: counts + cash applied to that
   // month's rent (after old arrears are settled first), for the dashboard
   // snapshot's "by property" section — kept consistent with the paid/
@@ -1425,12 +1536,15 @@ const Repo = {
 // =====================================================================
 // UI LAYER
 // =====================================================================
-const State = { tab:"dashboard", propertyId:null, tenantId:null, modal:null };
+// The Tenants sheet is the home screen — everything else is one tap away.
+const State = { tab:"tenants", tenantId:null, modal:null };
 
-function render(){ Screens[State.tab] ? Screens[State.tab]() : renderDashboard(); }
+function render(){ Screens[State.tab] ? Screens[State.tab]() : Screens.tenants(); }
 
 function Shell(title, sub, innerHtml, opts={}){
   const app = document.getElementById("app");
+  // A spreadsheet needs the room on a tablet/desktop; card screens stay phone-width.
+  document.body.classList.toggle("wide", !!opts.wide);
   const titleBlock = opts.logoImg
     ? `<img src="${opts.logoImg}" alt="${esc(title)}" style="height:60px;width:auto;display:block;border-radius:13px;">${sub?`<div class="sub" style="margin-top:6px;">${esc(sub)}</div>`:""}`
     : `<h1>${esc(title)}</h1>${sub?`<div class="sub">${esc(sub)}</div>`:""}`;
@@ -1446,21 +1560,24 @@ function Shell(title, sub, innerHtml, opts={}){
 }
 function Tabs(){
   const items = [
-    {id:"dashboard", ic:"dashboard", label:"Dashboard"},
+    {id:"tenants", ic:"table_view", label:"Tenants"},
+    {id:"dashboard", ic:"dashboard", label:"Overview"},
     {id:"properties", ic:"apartment", label:"Properties"},
-    {id:"defaulters", ic:"warning", label:"Defaulters"},
     {id:"cash", ic:"payments", label:"Cash"},
     {id:"partners", ic:"groups", label:"Partners"},
   ];
+  // Screens reached from a tab (ledger, defaulters, history…) keep their parent tab lit.
+  const parentTab = {tenantLedger: State.returnTab || "tenants", defaulters:"dashboard", transactionHistory:"dashboard", settlement:"cash", transferHistory:"cash", bulkSetup:"partners"};
+  const activeTab = parentTab[State.tab] || State.tab;
   return `<div class="tabs">${items.map(i=>`
-    <button class="tab ${State.tab===i.id?"active":""}" onclick="goTab('${i.id}')">
+    <button class="tab ${activeTab===i.id?"active":""}" onclick="goTab('${i.id}')">
       <span class="ic-wrap">${ic(i.ic)}</span><span>${i.label}</span>
     </button>`).join("")}</div>`;
 }
 function fabWrap(label, iconName, onclick){
   return `<div class="fab-wrap"><button class="fab-btn" onclick="${onclick}">${ic(iconName)}<span>${esc(label)}</span></button></div>`;
 }
-function goTab(id){ State.tab=id; State.propertyId=null; State.tenantId=null; render(); }
+function goTab(id){ State.tab=id; State.tenantId=null; render(); }
 
 function statusChip(balance){
   if (balance > 0.001) return `<span class="chip due">${ic("schedule")}Due ${fmtMoney(balance)}</span>`;
@@ -1553,7 +1670,7 @@ Screens.dashboard = async function(){
     </div>
 
     ${monthlyStatuses.length ? `
-    <div class="progress-card tap" onclick="goTab('defaulters')">
+    <div class="progress-card tap" onclick="openTenantSheet('all', '')">
       <div class="phead">
         <div class="ptitle">
           <div class="card-icon" style="background:var(--paid-bg);color:var(--paid);">${ic("payments")}</div>
@@ -1564,9 +1681,9 @@ Screens.dashboard = async function(){
       <div class="progress-track"><div class="progress-fill" style="width:${pctCollected}%;"></div></div>
     </div>
     <div class="glance-strip">
-      <div class="glance-pill" onclick="goTab('defaulters')"><div class="n num" style="color:var(--paid);">${paidCount}</div><div class="l">Paid</div></div>
-      <div class="glance-pill" onclick="goTab('defaulters')"><div class="n num" style="color:var(--partial);">${partialCount}</div><div class="l">Partial</div></div>
-      <div class="glance-pill" onclick="goTab('defaulters')"><div class="n num" style="color:var(--due);">${dueCount}</div><div class="l">Due</div></div>
+      <div class="glance-pill" onclick="openTenantSheet('paid', '')"><div class="n num" style="color:var(--paid);">${paidCount}</div><div class="l">Paid</div></div>
+      <div class="glance-pill" onclick="openTenantSheet('pending', '')"><div class="n num" style="color:var(--partial);">${partialCount}</div><div class="l">Partial</div></div>
+      <div class="glance-pill" onclick="openTenantSheet('pending', '')"><div class="n num" style="color:var(--due);">${dueCount}</div><div class="l">Due</div></div>
     </div>` : ""}
 
     <div class="chart-card">
@@ -1627,7 +1744,7 @@ Screens.dashboard = async function(){
     ${recent.length ? `
     <div class="list-card">${recent.map(txRowHtml).join("")}</div>` : `<div class="empty">${ic("receipt_long")}<div class="big">No payments recorded yet</div>Tap "Add payment" to log the first one.</div>`}
   `;
-  Shell("myTenants", "Dashboard", html, {
+  Shell("myTenants", "Overview", html, {
     logoImg: "icons/header-logo.png",
     fab: fabWrap("Add payment", "add", "openAddPayment()"),
     headerRight: `<div style="display:flex;gap:6px;">
@@ -1641,7 +1758,7 @@ Screens.dashboard = async function(){
 Screens.transactionHistory = async function(){
   const [properties, receivers] = await Promise.all([Repo.allProperties(), Repo.allReceivers()]);
   const html = `
-    <button class="back-btn" onclick="goTab('dashboard')">${ic("arrow_back")}Dashboard</button>
+    <button class="back-btn" onclick="goTab('dashboard')">${ic("arrow_back")}Overview</button>
     <input id="tx-search" type="search" placeholder="Search tenant, property, note, receiver…" oninput="renderTxHistoryList()" style="margin-bottom:10px;">
     <button class="btn ghost small" onclick="toggleTxFilters()">${ic("filter_list")}Filters</button>
     <div id="tx-filters" class="card" style="display:none;margin-top:10px;">
@@ -1748,98 +1865,252 @@ Screens.properties = async function(){
           <div class="name">${esc(p.name)}</div>
           <div class="meta">${esc(p.type||"Property")} · owner ${esc(p.owner_name||"—")} · owner rent ${fmtMoney(p.owner_rent_amount)}/mo</div>
         </div>
-        <span class="chip neutral">${p.count} tenant${p.count===1?"":"s"}</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="chip neutral">${p.count} tenant${p.count===1?"":"s"}</span>
+          <button class="icon-btn" onclick="event.stopPropagation(); openModal('editProperty','${p.id}')" title="Edit property">${ic("edit")}</button>
+        </div>
       </div>
     </div>`).join("") : `<div class="empty">${ic("apartment")}<div class="big">No properties yet</div>Add the first property you lease from a landowner.</div>`;
   Shell("Properties", `${properties.length} total`, html, { fab: fabWrap("Add property", "add", "openModal('addProperty')") });
 };
 
-function tenantCard(t){
-  return `
-    <div class="card tap" onclick="openTenantLedger('${t.id}')" style="${t.archived?"opacity:.62;":""}">
-      <div class="row">
-        <div><div class="name">${esc(t.name)}</div><div class="meta">Rent ${fmtMoney(t.monthly_rent)}/mo</div></div>
-        ${t.archived ? `<span class="chip neutral">${ic("inventory_2")}Moved out</span>` : statusChip(t.current_balance||0)}
-      </div>
-    </div>`;
+// ---------- Tenants sheet (home screen) ----------
+// One spreadsheet row per tenant for a chosen month: rent due, who paid how
+// much (when, and to whom), and who's still pending. Statuses come from
+// Repo.rentRoll(), i.e. the same oldest-debt-first rule the Overview,
+// Defaulters and the PDF report use, so every screen agrees on "pending".
+const fmtDayMonth = (d) => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short"}) : "—";
+const SHEET_COLS = [
+  {key:"name", label:"Tenant", cls:"c-name"},
+  {key:"status", label:"Status", cls:"c-status"},
+  {key:"due", label:"Rent", num:true},
+  {key:"paid", label:"Paid", num:true},
+  {key:"pending", label:"Pending", num:true},
+  {key:"oldDues", label:"Old dues", num:true},
+  {key:"totalOwed", label:"Total owed", num:true},
+];
+const SHEET_STATUS_ORDER = {due:0, partial:1, paid:2};
+let _sheetRows = []; // the month's rentRoll, kept so typing in search doesn't refetch
+
+function openTenantSheet(filter, propertyId){
+  State.sheetFilter = filter || "all";
+  if (propertyId !== undefined) State.sheetProperty = propertyId;
+  goTab("tenants");
 }
-function monthlyStatusChip(status){
-  if (status==="paid") return `<span class="chip paid">${ic("check_circle")}Paid</span>`;
-  if (status==="partial") return `<span class="chip partial">${ic("hourglass_top")}Partial</span>`;
-  return `<span class="chip due">${ic("schedule")}Due</span>`;
+function openPropertyTenants(id){ openTenantSheet("all", id); }
+function setSheetMonth(mk){
+  if (!mk) return;
+  State.sheetMonth = mk > monthKey() ? monthKey() : mk;
+  render();
 }
-function monthlyTenantCard(row){
-  const t = row.tenant;
-  const owedBefore = row.priorArrears > 0.004;
-  const wentToOldDue = owedBefore ? Math.min(row.paid, row.priorArrears) : 0;
-  return `
-    <div class="card tap" onclick="openTenantLedger('${t.id}')">
-      <div class="row">
-        <div>
-          <div class="name">${esc(t.name)}${t.archived?' <span class="meta">(moved out)</span>':""}</div>
-          <div class="meta">${fmtMoney(row.appliedToCurrentMonth)} of ${fmtMoney(row.due)} this month${wentToOldDue>0.004?` · ${fmtMoney(wentToOldDue)} went to old dues first`:""}</div>
-        </div>
-        ${monthlyStatusChip(row.status)}
-      </div>
-    </div>`;
+function shiftSheetMonth(n){ setSheetMonth(addMonths(State.sheetMonth || monthKey(), n)); }
+function setSheetFilter(f){ State.sheetFilter = f; renderTenantSheet(); }
+function setSheetSort(key){
+  const cur = State.sheetSort || {key:"name", dir:1};
+  // Text and status read best ascending (A→Z, Due first); amounts biggest first.
+  State.sheetSort = cur.key===key ? {key, dir:-cur.dir} : {key, dir:(key==="name"||key==="status") ? 1 : -1};
+  renderTenantSheet();
 }
-function tenantsViewToggleHtml(){
-  const mode = State.tenantsViewMode || "overall";
-  const month = State.tenantsViewMonth || monthKey();
-  return `
-    <div class="segmented">
-      <button class="${mode==="overall"?"active":""}" onclick="setTenantsViewMode('overall')">Overall</button>
-      <button class="${mode==="monthly"?"active":""}" onclick="setTenantsViewMode('monthly')">This month</button>
-    </div>
-    ${mode==="monthly" ? `<input type="month" max="${monthKey()}" value="${month}" onchange="State.tenantsViewMonth=this.value; render();" style="margin-bottom:12px;">` : ""}
-  `;
+
+// What the sheet currently shows: `scope` is the month + property + moved-out
+// toggle (what the summary totals cover); `rows` additionally applies the
+// Pending/Paid filter and search, sorted, and grouped by property.
+function tenantSheetView(){
+  const propId = State.sheetProperty || "";
+  const showMovedOut = !!State.sheetShowMovedOut;
+  const inProperty = _sheetRows.filter(r => !propId || r.tenant.property_id===propId);
+  const scope = inProperty.filter(r => showMovedOut || !r.tenant.archived);
+  const filter = State.sheetFilter || "all";
+  const q = (State.sheetSearch||"").trim().toLowerCase();
+  let rows = scope;
+  if (filter==="pending") rows = rows.filter(r=>r.status!=="paid");
+  if (filter==="paid") rows = rows.filter(r=>r.status==="paid");
+  if (q) rows = rows.filter(r => [r.tenant.name, r.property&&r.property.name, r.tenant.phone, ...r.payments.flatMap(p=>p.receivedBy)]
+    .filter(Boolean).join(" ").toLowerCase().includes(q));
+  const sort = State.sheetSort || {key:"name", dir:1};
+  const val = (r) => sort.key==="name" ? r.tenant.name.toLowerCase() : sort.key==="status" ? SHEET_STATUS_ORDER[r.status] : r[sort.key];
+  rows = [...rows].sort((a,b) => { const va=val(a), vb=val(b); return (va<vb?-1:va>vb?1:0)*sort.dir || a.tenant.name.localeCompare(b.tenant.name); });
+  const groups = [];
+  for (const r of rows){
+    const pid = r.tenant.property_id;
+    let g = groups.find(x=>x.id===pid);
+    if (!g){ g = {id:pid, name: r.property ? r.property.name : "No property", rows:[]}; groups.push(g); }
+    g.rows.push(r);
+  }
+  groups.sort((a,b)=>a.name.localeCompare(b.name));
+  rows = groups.flatMap(g=>g.rows); // on-screen order, so the CSV export matches it
+  return { scope, rows, groups, filter, sort, movedOutCount: inProperty.filter(r=>r.tenant.archived).length };
 }
-function setTenantsViewMode(mode){ State.tenantsViewMode = mode; render(); }
-Screens.propertyTenants = async function(){
-  const property = await get("properties", State.propertyId);
-  const mode = State.tenantsViewMode || "overall";
+
+Screens.tenants = async function(){
+  const mk = State.sheetMonth || monthKey();
+  const properties = await Repo.allProperties();
+  if (State.sheetProperty && !properties.some(p=>p.id===State.sheetProperty)) State.sheetProperty = "";
+  const propId = State.sheetProperty || "";
+  const prop = properties.find(p=>p.id===propId);
   const html = `
-    <button class="back-btn" onclick="goTab('properties')">${ic("arrow_back")}Properties</button>
-    <div class="card">
-      <div class="row"><div class="name">${esc(property.name)}</div><button class="link-btn" onclick="openModal('editProperty')">${ic("edit")}Edit</button></div>
-      <div class="meta">${esc(property.type||"Property")} · owner ${esc(property.owner_name||"—")} · owner rent ${fmtMoney(property.owner_rent_amount)}/mo</div>
+    <div class="sheet-controls">
+      <div class="month-nav">
+        <button class="icon-btn" onclick="shiftSheetMonth(-1)" title="Previous month">${ic("chevron_left")}</button>
+        <input type="month" max="${monthKey()}" value="${mk}" onchange="setSheetMonth(this.value)" aria-label="Month">
+        <button class="icon-btn" onclick="shiftSheetMonth(1)" title="Next month" ${mk>=monthKey()?"disabled":""}>${ic("chevron_right")}</button>
+      </div>
+      <select onchange="State.sheetProperty=this.value; render();" aria-label="Property">
+        <option value="">All properties</option>
+        ${properties.map(p=>`<option value="${p.id}" ${propId===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}
+      </select>
+      <input id="sheet-search" type="search" placeholder="Search tenant, phone, receiver…" value="${esc(State.sheetSearch||"")}" oninput="State.sheetSearch=this.value; renderTenantSheet();">
     </div>
-    <div class="section-title">${ic("groups")}Tenants</div>
-    ${tenantsViewToggleHtml()}
-    ${mode==="monthly" ? await renderMonthlyTenantsList(property.id, State.tenantsViewMonth || monthKey()) : await renderOverallTenantsList(property.id)}
+    ${prop ? `<div class="sheet-prop-note">${ic("apartment")}<span>${esc(prop.type||"Property")} · owner ${esc(prop.owner_name||"—")} · owner rent ${fmtMoney(prop.owner_rent_amount)}/mo</span><button class="link-btn" onclick="openModal('editProperty','${prop.id}')">${ic("edit")}Edit property</button></div>` : ""}
+    <div id="sheet-body"><div class="sheet-loading">Loading…</div></div>
   `;
-  Shell("Tenants", property.name, html, { fab: fabWrap("Add tenant", "add", "openModal('addTenant')") });
+  Shell("Tenants", `Rent sheet · ${fmtMonth(mk)}`, html, {
+    wide: true,
+    fab: fabWrap("Add payment", "add", `openAddPayment(null, {forMonth:'${mk}'})`),
+    headerRight: `<div style="display:flex;gap:6px;">
+      <button class="icon-btn" onclick="exportTenantSheetCsv()" title="Download this sheet (CSV)">${ic("download")}</button>
+      <button class="icon-btn" onclick="openModal('addTenant')" title="Add tenant">${ic("person_add")}</button>
+    </div>`
+  });
+  const rows = await Repo.rentRoll(mk);
+  if ((State.sheetMonth || monthKey()) !== mk) return; // month changed while loading
+  _sheetRows = rows;
+  renderTenantSheet(properties.length === 0);
 };
-async function renderOverallTenantsList(propertyId){
-  const tenants = await Repo.tenantsForProperty(propertyId);
-  const active = tenants.filter(t=>!t.archived);
-  const archived = tenants.filter(t=>t.archived);
-  if (!tenants.length) return `<div class="empty">${ic("person_add")}<div class="big">No tenants yet</div>Add the first tenant for this property.</div>`;
-  return `
-    ${active.map(tenantCard).join("")}
-    ${archived.length ? `<div class="section-title">${ic("inventory_2")}Moved out</div>${archived.map(tenantCard).join("")}` : ""}
+
+function renderTenantSheet(noProperties){
+  const el = document.getElementById("sheet-body");
+  if (!el) return;
+  const mk = State.sheetMonth || monthKey();
+  if (noProperties){
+    el.innerHTML = `<div class="empty">${ic("apartment")}<div class="big">Start by adding a property</div>Tenants belong to a property you lease.<div style="margin-top:14px;"><button class="btn small" onclick="goTab('properties')">${ic("add")}Add property</button></div></div>`;
+    return;
+  }
+  const v = tenantSheetView();
+  const sum = (list, k) => list.reduce((s,r)=>s+(r[k]||0),0);
+  const expected = sum(v.scope,"due"), applied = sum(v.scope,"appliedToCurrentMonth");
+  const pct = expected>0.004 ? Math.round(applied/expected*100) : (applied>0.004 ? 100 : 0);
+  const pendingCount = v.scope.filter(r=>r.status!=="paid").length;
+  const money = (n, cls) => n>0.004 ? `<span class="${cls||""}">${fmtMoney(n)}</span>` : `<span class="zero">—</span>`;
+  const statusPill = (s) => `<span class="cell-pill ${s}">${s==="paid"?"Paid":s==="partial"?"Partial":"Due"}</span>`;
+  const totalsCells = (list) => `
+    <td class="num">${fmtMoney(sum(list,"due"))}</td>
+    <td class="num">${money(sum(list,"paid"),"paid-amt")}</td>
+    <td class="num">${money(sum(list,"pending"),"due-amt")}</td>
+    <td class="num">${money(sum(list,"oldDues"))}</td>
+    <td class="num">${money(sum(list,"totalOwed"),"strong")}</td>`;
+  const grouped = !State.sheetProperty && v.groups.length > 1;
+
+  const rowHtml = (r) => {
+    const t = r.tenant;
+    const payLines = r.payments.map(p => `<button class="pay-line" onclick="event.stopPropagation(); openTxnDetail('${p.id}')">${fmtDayMonth(p.date)} · <b class="num">${fmtMoney(p.amount)}</b>${p.receivedBy.length ? ` · ${esc(p.receivedBy.join(", "))}` : ""}</button>`).join("");
+    const payAmount = r.totalOwed > 0.004 ? Math.round(r.totalOwed*100)/100 : "null";
+    const subParts = [];
+    if (!grouped && !State.sheetProperty && r.property) subParts.push(esc(r.property.name));
+    if (t.archived) subParts.push("moved out");
+    // Oldest debt is cleared first, so explain a "Paid" amount that left this month Due.
+    const toOldDues = r.priorArrears > 0.004 ? Math.min(r.paid, r.priorArrears) : 0;
+    return `
+      <tr class="tap st-${r.status}${t.archived?" moved-out":""}" onclick="openTenantLedger('${t.id}')">
+        <td class="c-name"><div class="tn">${esc(t.name)}</div>${subParts.length ? `<div class="sub">${subParts.join(" · ")}</div>` : ""}<div class="m-status">${statusPill(r.status)}</div></td>
+        <td class="c-status">${statusPill(r.status)}</td>
+        <td class="num">${fmtMoney(r.due)}</td>
+        <td class="num">${money(r.paid,"paid-amt")}${toOldDues>0.004 ? `<div class="sub">${fmtMoney(toOldDues)} to old dues</div>` : ""}</td>
+        <td class="num">${money(r.pending,"due-amt")}</td>
+        <td class="num">${money(r.oldDues)}</td>
+        <td class="num">${money(r.totalOwed,"strong")}</td>
+        <td class="c-pay">${payLines || `<span class="zero">—</span>`}</td>
+        <td class="c-act">
+          <button class="cell-btn" onclick="event.stopPropagation(); openAddPayment('${t.id}', {forMonth:'${mk}', amount:${payAmount}})" title="Record a payment">${ic("add")}Pay</button>
+          ${r.totalOwed>0.004 && !t.archived ? `<button class="cell-btn wa" onclick="event.stopPropagation(); requestPaymentViaWhatsApp('${t.id}')" title="Send WhatsApp reminder">${ic("chat")}</button>` : ""}
+        </td>
+      </tr>`;
+  };
+  const head = SHEET_COLS.map(c => {
+    const arrow = v.sort.key===c.key ? `<span class="msi sort-ic">${v.sort.dir>0?"arrow_upward":"arrow_downward"}</span>` : "";
+    return `<th class="sortable ${c.num?"num":""} ${c.cls||""}" onclick="setSheetSort('${c.key}')">${c.label}${arrow}</th>`;
+  }).join("");
+
+  let body;
+  if (!v.scope.length){
+    body = `<div class="empty">${ic("person_add")}<div class="big">No tenants for ${esc(fmtMonth(mk))}</div>Nobody had moved in by this month${State.sheetProperty ? " at this property" : ""}.<div style="margin-top:14px;"><button class="btn small" onclick="openModal('addTenant')">${ic("person_add")}Add tenant</button></div></div>`;
+  } else if (!v.rows.length){
+    const nobodyPending = v.filter==="pending" && !(State.sheetSearch||"").trim();
+    body = `<div class="empty">${ic(nobodyPending?"celebration":"search_off")}<div class="big">${nobodyPending ? `Nobody pending for ${esc(fmtMonth(mk))}` : "No matching tenants"}</div>${nobodyPending ? "Every tenant has paid this month's rent." : "Try a different search or filter."}</div>`;
+  } else {
+    body = `
+    <div class="sheet-wrap"><table class="sheet">
+      <thead><tr>${head}<th>Payments · date · received by</th><th class="c-act"></th></tr></thead>
+      <tbody>
+        ${grouped ? v.groups.map(g => `
+          <tr class="grp"><td class="c-name">${ic("apartment")}${esc(g.name)} <span class="sub">${g.rows.length}</span></td><td class="c-status"></td>${totalsCells(g.rows)}<td></td><td class="c-act"></td></tr>
+          ${g.rows.map(rowHtml).join("")}`).join("") : v.rows.map(rowHtml).join("")}
+      </tbody>
+      <tfoot><tr><td class="c-name">Total · ${v.rows.length} tenant${v.rows.length===1?"":"s"}</td><td class="c-status"></td>${totalsCells(v.rows)}<td></td><td class="c-act"></td></tr></tfoot>
+    </table></div>`;
+  }
+
+  el.innerHTML = `
+    <div class="sheet-summary">
+      <div class="ss"><div class="l">Rent due</div><div class="v num">${fmtMoney(expected)}</div></div>
+      <div class="ss"><div class="l">Received</div><div class="v num" style="color:var(--paid);">${fmtMoney(sum(v.scope,"paid"))}</div></div>
+      <div class="ss"><div class="l">Pending</div><div class="v num" style="color:var(--due);">${fmtMoney(sum(v.scope,"pending"))}</div></div>
+      <div class="ss"><div class="l">Total owed</div><div class="v num">${fmtMoney(sum(v.scope,"totalOwed"))}</div><div class="s">incl. old dues</div></div>
+    </div>
+    <div class="sheet-progress">
+      <div class="progress-track"><div class="progress-fill" style="width:${Math.min(pct,100)}%;"></div></div>
+      <span class="num"><b>${pct}%</b> of ${esc(fmtMonth(mk))}'s rent collected</span>
+    </div>
+    <div class="filter-chips">
+      <button class="fchip ${v.filter==="all"?"active":""}" onclick="setSheetFilter('all')">All <b>${v.scope.length}</b></button>
+      <button class="fchip due ${v.filter==="pending"?"active":""}" onclick="setSheetFilter('pending')">Pending <b>${pendingCount}</b></button>
+      <button class="fchip paid ${v.filter==="paid"?"active":""}" onclick="setSheetFilter('paid')">Paid <b>${v.scope.length - pendingCount}</b></button>
+      ${v.movedOutCount ? `<label class="fchip-check"><input type="checkbox" ${State.sheetShowMovedOut?"checked":""} onchange="State.sheetShowMovedOut=this.checked; renderTenantSheet();">Show moved out (${v.movedOutCount})</label>` : ""}
+    </div>
+    ${body}
   `;
 }
-async function renderMonthlyTenantsList(propertyId, mk){
-  const rows = await Repo.monthlyStatusForAllTenants(mk, propertyId);
-  if (!rows.length) return `<div class="empty">${ic("event_busy")}<div class="big">No tenants yet for ${esc(fmtMonth(mk))}</div>Nobody had moved in by this month.</div>`;
-  const paid = rows.filter(r=>r.status==="paid").length;
-  const partial = rows.filter(r=>r.status==="partial").length;
-  const due = rows.filter(r=>r.status==="due").length;
-  return `
-    <div class="month-summary"><span><b>${paid}</b> paid</span><span><b>${partial}</b> partial</span><span><b>${due}</b> due</span></div>
-    ${rows.map(monthlyTenantCard).join("")}
-  `;
+
+// Downloads exactly what the sheet is showing (filters, search and sort
+// included) — opens straight into Excel / Google Sheets.
+async function exportTenantSheetCsv(){
+  const mk = State.sheetMonth || monthKey();
+  const v = tenantSheetView();
+  if (!v.rows.length) return toast("Nothing to export for this view");
+  const cell = (x) => { const s = String(x==null?"":x); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; };
+  const n = (x) => (Math.round((x||0)*100)/100).toFixed(2);
+  const lines = [["Month","Property","Tenant","Status","Rent","Paid","Pending","Old dues","Total owed","Payments"]];
+  for (const r of v.rows){
+    lines.push([fmtMonth(mk), r.property?r.property.name:"", r.tenant.name + (r.tenant.archived?" (moved out)":""), r.status,
+      n(r.due), n(r.paid), n(r.pending), n(r.oldDues), n(r.totalOwed),
+      r.payments.map(p=>`${p.date} ${n(p.amount)}${p.receivedBy.length?" via "+p.receivedBy.join("/"):""}`).join("; ")]);
+  }
+  const tot = (k) => n(v.rows.reduce((s,r)=>s+r[k],0));
+  lines.push(["","","Total","",tot("due"),tot("paid"),tot("pending"),tot("oldDues"),tot("totalOwed"),""]);
+  const blob = new Blob([lines.map(l=>l.map(cell).join(",")).join("\r\n")], {type:"text/csv"});
+  const filename = `mytenants-rent-sheet-${mk}.csv`;
+  if (isNativeApp()) return nativeSaveAndShare(filename, blob, `Rent sheet ${fmtMonth(mk)}`);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 Screens.tenantLedger = async function(){
   const {tenant, rows, balance} = await Repo.tenantLedgerRows(State.tenantId);
   const property = await get("properties", tenant.property_id);
+  const back = State.returnTab || "tenants";
+  const backLabel = {tenants:"Tenants", dashboard:"Overview", defaulters:"Defaulters", transactionHistory:"Transaction history"}[back] || "Back";
   const html = `
-    <button class="back-btn" onclick="openPropertyTenants('${tenant.property_id}')">${ic("arrow_back")}${esc(property?property.name:"Property")}</button>
+    <button class="back-btn" onclick="goTab('${back}')">${ic("arrow_back")}${backLabel}</button>
     <div class="card">
       <div class="row"><div class="name">${esc(tenant.name)}</div>${statusChip(balance)}</div>
-      <div class="meta">Rent ${fmtMoney(tenant.monthly_rent)}/mo · tenant since ${fmtDate(tenant.start_date)}</div>
+      <div class="meta">${esc(property?property.name:"")} · Rent ${fmtMoney(tenant.monthly_rent)}/mo · tenant since ${fmtDate(tenant.start_date)}${tenant.phone?` · ${esc(tenant.phone)}`:""}</div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn small" style="flex:1;" onclick="openAddPayment('${tenant.id}')">${ic("payments")}Record payment</button>
+        ${balance>0.004 && !tenant.archived ? `<button class="icon-btn" style="background:#25D366;color:#fff;" onclick="requestPaymentViaWhatsApp('${tenant.id}')" title="Send WhatsApp reminder">${ic("chat")}</button>` : ""}
+      </div>
     </div>
     <div class="section-title">${ic("receipt_long")}Ledger</div>
     <div class="card">
@@ -1853,9 +2124,7 @@ Screens.tenantLedger = async function(){
           ${r.id?`<span class="msi chevron">chevron_right</span>`:""}
         </div>`).join("") : `<div class="empty">No ledger activity yet.</div>`}
     </div>
-    <button class="btn secondary" style="margin-top:6px;">
-      <span onclick="openModal('editTenant')" style="display:flex;align-items:center;gap:8px;">${ic("edit")}Edit tenant</span>
-    </button>
+    <button class="btn secondary" style="margin-top:6px;" onclick="openModal('editTenant')">${ic("edit")}Edit tenant</button>
     <button class="btn ghost" style="margin-top:8px;" onclick="openModal('adjustBalance')">${ic("tune")}Adjust balance / add pending due</button>
   `;
   Shell("Tenant ledger", tenant.name, html);
@@ -1868,6 +2137,7 @@ Screens.defaulters = async function(){
   const list = await Repo.defaulterTenantsWithProperty(filter || null);
   const chartData = list.slice(0,6).map(t=>({label:t.name, value:t.current_balance}));
   const html = `
+    <button class="back-btn" onclick="goTab('dashboard')">${ic("arrow_back")}Overview</button>
     <select onchange="State.defaulterFilter=this.value; render();" style="margin-bottom:14px;">
       <option value="">All properties</option>
       ${properties.map(p=>`<option value="${p.id}" ${filter===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}
@@ -2534,8 +2804,10 @@ async function unlockBulkSetup(){
 }
 
 // ---------- navigation helpers ----------
-function openPropertyTenants(id){ State.tab="propertyTenants"; State.propertyId=id; render(); }
-function openTenantLedger(id){ State.tab="tenantLedger"; State.tenantId=id; render(); }
+function openTenantLedger(id){
+  if (State.tab !== "tenantLedger") State.returnTab = State.tab; // so Back returns where you came from
+  State.tab="tenantLedger"; State.tenantId=id; render();
+}
 
 // ---------- modal system (Material bottom sheet) ----------
 function openModal(name, payload){ State.modal = {name, payload}; renderModal(); }
@@ -2564,8 +2836,8 @@ async function saveProperty(){
   await Repo.addProperty({name, type:document.getElementById("m-type").value.trim(), owner_name:document.getElementById("m-owner").value.trim(), owner_rent_amount:document.getElementById("m-rent").value});
   closeModal(); render();
 }
-Modals.editProperty = async (_, root) => {
-  const p = await get("properties", State.propertyId);
+Modals.editProperty = async (id, root) => {
+  const p = await get("properties", id);
   root.innerHTML = modalShell("Edit property", `
     <label>Property name</label><input id="m-name" type="text" value="${esc(p.name)}">
     <label>Type</label><input id="m-type" type="text" value="${esc(p.type||"")}">
@@ -2584,8 +2856,13 @@ async function deletePropertyConfirm(id){
   catch(e){ toast(e.message); }
 }
 
-Modals.addTenant = (_, root) => {
+Modals.addTenant = async (_, root) => {
+  const properties = await Repo.allProperties();
+  if (!properties.length){ closeModal(); toast("Add a property first"); goTab("properties"); return; }
+  const preselect = State.sheetProperty || "";
   root.innerHTML = modalShell("Add tenant", `
+    <label>Property</label>
+    <select id="m-property">${properties.map(p=>`<option value="${p.id}" ${p.id===preselect?"selected":""}>${esc(p.name)}</option>`).join("")}</select>
     <label>Tenant / shop name</label><input id="m-name" type="text">
     <label>Monthly rent</label><input id="m-rent" type="number" step="0.01">
     <label>Phone number (optional)</label>
@@ -2596,7 +2873,7 @@ Modals.addTenant = (_, root) => {
 async function saveTenant(){
   const name = document.getElementById("m-name").value.trim();
   if (!name) return toast("Enter a tenant name");
-  await Repo.addTenant({property_id: State.propertyId, name, monthly_rent: document.getElementById("m-rent").value, phone: document.getElementById("m-phone").value.trim()});
+  await Repo.addTenant({property_id: document.getElementById("m-property").value, name, monthly_rent: document.getElementById("m-rent").value, phone: document.getElementById("m-phone").value.trim()});
   closeModal(); render();
 }
 Modals.editTenant = async (_, root, errMsg) => {
@@ -3277,7 +3554,9 @@ function apCollectReceivers(total_amount){
   return singleReceiver ? [{receiver_id: singleReceiver, amount: total_amount}] : [];
 }
 
-async function openAddPayment(prefillTenantId){
+// opts.forMonth / opts.amount: set by the Tenants sheet so "Pay" on a row
+// lands on that row's month with what's needed to clear it pre-filled.
+async function openAddPayment(prefillTenantId, opts={}){
   const tenants = await Repo.allTenantsWithProperty();
   const receivers = await Repo.allReceivers();
   const partners = await Repo.allPartners();
@@ -3299,13 +3578,13 @@ async function openAddPayment(prefillTenantId){
         ${prefillTenant && prefillTenant.current_balance>0.004 ? `<div class="meta" style="margin-top:4px;">Currently owes ${fmtMoney(prefillTenant.current_balance)}</div>` : ""}
 
         <label>Amount received</label>
-        <input id="ap-amount" type="number" step="0.01" value="${prefillTenant && prefillTenant.current_balance>0.004 ? prefillTenant.current_balance : ""}" oninput="apRefreshSplitSum()">
+        <input id="ap-amount" type="number" step="0.01" value="${opts.amount !== undefined ? (opts.amount ?? "") : (prefillTenant && prefillTenant.current_balance>0.004 ? prefillTenant.current_balance : "")}" oninput="apRefreshSplitSum()">
 
         <label>Date</label>
         <input id="ap-date" type="date" value="${todayISO()}">
         <div class="meta" style="margin-top:4px;">When the payment was actually received.</div>
         <label>Rent month</label>
-        <input type="month" id="ap-for-month" max="${monthKey()}" value="${monthKey()}">
+        <input type="month" id="ap-for-month" max="${monthKey()}" value="${opts.forMonth || monthKey()}">
         <div class="meta" style="margin-top:4px;">Which month's rent this counts toward in Defaulters/Monthly view. Defaults to the payment date's month — change it if this was a late payment for an earlier month.</div>
 
         ${receiverPickerHtml(receivers, partnerById)}
@@ -3553,7 +3832,8 @@ function modalShell(title, inner){
 
 // expose functions used via inline onclick handlers
 Object.assign(window, {
-  goTab, openPropertyTenants, openTenantLedger, openModal, closeModal, setTenantsViewMode,
+  goTab, openPropertyTenants, openTenantLedger, openModal, closeModal,
+  openTenantSheet, setSheetMonth, shiftSheetMonth, setSheetFilter, setSheetSort, renderTenantSheet, exportTenantSheetCsv,
   saveProperty, updatePropertySave, deletePropertyConfirm,
   saveTenant, updateTenantSave, deleteTenantConfirm, forceDeleteTenantConfirm, toggleArchiveTenant, submitAdjustBalance, requestPaymentViaWhatsApp,
   setRentChangeMode, refreshRentCorrectionPreview, submitCorrectRent, submitScheduleRent,

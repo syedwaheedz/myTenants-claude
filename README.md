@@ -170,6 +170,46 @@ these as **repo secrets** (Settings → Secrets and variables → Actions):
 - **Manage Partners → Restore from backup** re-imports a `.json` export,
   replacing whatever is currently in this browser's storage.
 
+## The Tenants sheet (home screen)
+
+The app opens straight onto **Tenants**: a spreadsheet of every tenant for
+one month, answering "who paid how much, and who's still pending" without
+leaving the first screen. Bottom navigation is now **Tenants · Overview ·
+Properties · Cash · Partners**. Overview is the old Dashboard; Defaulters is
+still reachable from it.
+
+- **Month bar**: arrows step back and forward a month (never past the
+  current one), or pick any month directly.
+- **Columns**: Tenant · Status · Rent · Paid · Pending · Old dues · Total
+  owed · Payments (date, amount and who received each one) · actions. Each
+  row also has a colored edge, green/amber/red for Paid/Partial/Due.
+- **Same rule as everywhere else**: a payment clears the oldest debt first,
+  so a tenant who paid exactly one month's rent while still owing last month
+  shows **Due** for this month, with a note like "₹8,000 to old dues" under
+  the Paid figure. The sheet, Overview, Defaulters and the PDF report all
+  read from the same calculation (`Repo.rentRoll()` builds on
+  `monthlyStatusForAllTenants()`), so they always agree.
+- **Filters**: All / Pending / Paid chips with counts, a property picker,
+  and a search box that matches tenant name, phone, property, or who
+  received the payment. Moved-out tenants are hidden unless you tick
+  **Show moved out**.
+- **Totals**: when all properties are shown, rows are grouped by property
+  with a subtotal row each. A grand-total row stays pinned to the bottom.
+  The header row and the tenant column stay pinned while you scroll.
+  Tapping a column header sorts by that column.
+- **Actions per row**: **Pay** opens Add payment for that tenant, already
+  set to that month with the amount still owed filled in. The green chat
+  button sends a WhatsApp reminder. Tapping the row opens the tenant's
+  ledger, and its Back button returns to the sheet with your filters as
+  you left them.
+- **Download** (top right) saves exactly what's on screen as a CSV for
+  Excel or Google Sheets, totals row included.
+
+On a phone, the Status column folds under each tenant's name so that Rent,
+Paid and Pending fit on screen without scrolling sideways. On a tablet or
+desktop, the sheet widens to use the full screen. Tapping a property on the
+Properties tab opens the sheet filtered to that property.
+
 ## Look & feel
 
 Restyled around Material Design 3: Roboto type, a teal seed palette (M3
@@ -402,22 +442,18 @@ for sending straight to a partner over WhatsApp). It's drawn on a plain
 `<canvas>` rather than captured from the live page, so it's reliably crisp
 regardless of font loading or screen size.
 
-## Monthly view per property
+## How a month's Paid / Partial / Due is decided
 
-On a property's tenant list, a small **Overall / This month** toggle
-switches between the usual running-balance chip and a specific month's
-collection status: **Paid**, **Partial**, or **Due**, with a quick summary
-count above the list. The rule follows the same oldest-debt-first logic
-as the running balance: any arrears carried in from before the month
-(computed from the full transaction history up to that cutoff) are paid
-off first, and only what's left over counts toward the current month's
-rent. A month is Paid if that leftover covers the full rent, Partial if
-it covers some of it, Due if nothing's left after old arrears are
-settled — so a tenant who pays exactly this month's rent while still
-owing from before still shows as Due (or Partial), not Paid. Dashboard,
-Defaulters, the PDF report, and this toggle all agree on this figure.
-Archived (moved-out) tenants still show for months they were active,
-tagged "(moved out)".
+This is the rule behind the **Tenants sheet**'s status column, and behind
+the Overview, Defaulters and PDF report too. Payments clear the oldest debt
+first. Any arrears carried in from before the month (computed from the full
+transaction history up to that cutoff) are paid off before anything counts
+toward that month's rent. A month is Paid if what's left covers the full
+rent, Partial if it covers some of it, and Due if nothing is left after old
+arrears are settled. So a tenant who pays exactly this month's rent while
+still owing from before shows Due (or Partial), not Paid. Moved-out tenants
+still show for months they were active, tagged "moved out", once
+**Show moved out** is ticked.
 
 ## Fixing a mistake in a payment or adjustment
 
